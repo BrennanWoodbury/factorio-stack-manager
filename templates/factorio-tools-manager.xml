@@ -10,7 +10,7 @@
   <Icon>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/icon.png</Icon>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
 
-  <Support>https://github.com/BrennanWoodbury/factorio-tools-manager/issues</Support>
+  <Support>https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml</Support>
   <Project>https://github.com/BrennanWoodbury/factorio-tools-manager</Project>
   <TemplateURL>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/templates/factorio-tools-manager.xml</TemplateURL>
   <ReadMe>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/README.md</ReadMe>
