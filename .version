@@ -1,15 +1,4 @@
-# The release line. Both are human-controlled and reviewed in the PR that needs
-# them — that pairing is the point: a MAJOR bump and its UPGRADING.md section
-# land in the same diff, where a reviewer sees them together.
-#
-# The PATCH number is NOT here. It is derived at release time from the existing
-# git tags for this line (highest + 1, or 0 to start), because tags are already
-# the authoritative record of what shipped. Storing it here instead would mean
-# CI committing back to main: races between close merges, a bot commit that
-# retriggers CI, and write access to the default branch — all to duplicate
-# something git already knows.
-#
-# Bumping MINOR here resets PATCH to 0 by itself, since no tags exist for the
-# new line yet.
+# The release major. Change this manually only for a breaking contract, and only
+# one step at a time. Minor and patch are calculated from migrations, runtime
+# changes, and the latest reachable vMAJOR.MINOR.PATCH tag.
 MAJOR=1
-MINOR=0

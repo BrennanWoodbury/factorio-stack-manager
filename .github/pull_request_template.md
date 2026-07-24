@@ -4,10 +4,10 @@
 
 ## Release impact
 
-<!-- Keep one: Patch / Minor / Major. Explain the choice, including why any
-impact-check finding is a false positive if the impact-reviewed label is requested. -->
+<!-- Keep one: None / Patch / Minor / Major. CI calculates this; explain any
+breaking contract and the accompanying manual MAJOR increase. -->
 
-**Impact:** Patch / Minor / Major
+**Impact:** None / Patch / Minor / Major
 
 **Reasoning:**
 
@@ -38,7 +38,7 @@ backwardCompatible value. -->
 ## Verification
 
 <!-- List automated commands and focused manual scenarios. Include negative tests
-when changing validation, compatibility, or impact-check behavior. -->
+when changing validation, compatibility, or version-policy behavior. -->
 
 - Automated:
 - Manual:
@@ -46,7 +46,7 @@ when changing validation, compatibility, or impact-check behavior. -->
 ## Readiness
 
 - [ ] Tests cover the changed behavior, or the reason they do not is explained above
-- [ ] `.version` matches the release impact (unchanged for a patch)
-- [ ] User-facing changes are recorded under `CHANGELOG.md` → `[Unreleased]`
+- [ ] `.version` is unchanged, or MAJOR is increased exactly once for a breaking change
+- [ ] Any optional curated history belongs under `CHANGELOG.md` → `[Unreleased]`
 - [ ] `README.md` and the Unraid template are updated where their documented contract changed
 - [ ] Major changes or manual upgrade steps are documented in `UPGRADING.md`

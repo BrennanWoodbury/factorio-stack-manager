@@ -5,9 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    # Re-run the impact decision when a maintainer applies or removes the
-    # auditable false-positive override.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
 
 # A newer push to the same ref supersedes an in-flight run.
 concurrency:
@@ -23,7 +21,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
-      - run: node --test scripts/governance-check.test.mjs
+      - run: node --test scripts/*.test.mjs
+
+  version-policy:
+    name: Version policy
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - run: git fetch --force --tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+      - run: node scripts/version-policy.mjs --base "origin/${{ github.base_ref }}"
 
   backend:
     name: Backend — typecheck & tests
@@ -87,15 +99,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
-      # Fails when a change touches something users depend on (a one-way migration,
-      # a removed Unraid Config target, a renamed env var, a changed port default)
-      # without .version being bumped to match. A maintainer can apply the
-      # impact-reviewed label for a false positive; the PR must explain why.
-      - env:
-          IMPACT_OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'impact-reviewed') }}
-        run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          node scripts/impact-check.mjs "origin/${{ github.base_ref }}"
+      - run: git fetch --force --tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+      - run: node scripts/version-policy.mjs --base "origin/${{ github.base_ref }}"
 
   image:
     name: Build & push edge image
