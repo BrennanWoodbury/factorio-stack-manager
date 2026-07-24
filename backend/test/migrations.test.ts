@@ -27,20 +27,57 @@ test('a fresh database ends up at the latest schema version', () => {
   }
 });
 
-test('a database from a newer release is refused rather than half-understood', () => {
+test('a newer database with an unreadable change is refused', () => {
   const db = new DB(':memory:');
-  db.exec(`PRAGMA user_version = ${LATEST_SCHEMA_VERSION + 1}`);
+  db.exec(SCHEMA_SQL);
+  db.exec(`PRAGMA user_version = ${LATEST_SCHEMA_VERSION + 5}`);
+  // A future release recorded that it made a one-way change.
+  db.prepare('INSERT INTO kv (key, value) VALUES (?, ?)').run(
+    'schema_min_compatible',
+    String(LATEST_SCHEMA_VERSION + 3),
+  );
   assert.throws(
     () => runMigrations(db),
     (err: unknown) => {
       assert.ok(err instanceof SchemaTooNewError);
       // The message has to tell an operator what to actually do about it.
-      assert.match(err.message, new RegExp(`v${LATEST_SCHEMA_VERSION + 1}`));
+      assert.match(err.message, new RegExp(`v${LATEST_SCHEMA_VERSION + 5}`));
       assert.match(err.message, /Roll forward/i);
       assert.match(err.message, /db-backups/);
       return true;
     },
   );
+  db.close();
+});
+
+test('a newer database whose changes are all additive still opens', () => {
+  const db = new DB(':memory:');
+  db.exec(SCHEMA_SQL);
+  runMigrations(db); // records a floor at the current build
+  db.exec(`PRAGMA user_version = ${LATEST_SCHEMA_VERSION + 4}`);
+  // This is the point of the floor: rolling back across ADD COLUMN migrations —
+  // 18 of the 20 operations in this file — should not cost the user anything.
+  assert.doesNotThrow(() => runMigrations(db));
+  db.close();
+});
+
+test('a newer database with no recorded floor is refused, not guessed at', () => {
+  const db = new DB(':memory:');
+  db.exec(SCHEMA_SQL);
+  db.exec(`PRAGMA user_version = ${LATEST_SCHEMA_VERSION + 1}`);
+  assert.throws(() => runMigrations(db), SchemaTooNewError);
+  db.close();
+});
+
+test('the floor is backfilled from the migrations already applied', () => {
+  const db = new DB(':memory:');
+  db.exec(SCHEMA_SQL);
+  runMigrations(db);
+  const floor = db
+    .prepare<{ value: string }>('SELECT value FROM kv WHERE key = ?')
+    .get('schema_min_compatible');
+  // v3 is the only one-way migration in the current set.
+  assert.equal(floor?.value, '3');
   db.close();
 });
 
