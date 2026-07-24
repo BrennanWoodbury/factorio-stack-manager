@@ -138,7 +138,8 @@ export function SettingsPanel({
       <WhitelistPanel
         title="Server admins"
         description="These Factorio usernames are admins on this server (in addition to the global admin list). Applies on next start/restart."
-        addLabel="+ Add admin"
+        addLabel="Add user to admin list"
+        saveLabel="Save admin list"
         hint={(n) => (n === 0 ? 'No admins set.' : `${n} admin${n === 1 ? '' : 's'}.`)}
         load={async () => (await api.getAdminlist(server.id)).adminlist}
         save={async (names) => (await api.setAdminlist(server.id, names)).adminlist}
