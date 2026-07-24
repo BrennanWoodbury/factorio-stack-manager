@@ -1,12 +1,12 @@
 name: Release
 
-# Tag-driven. Pushing `vX.Y.Z` is the only thing that moves `latest`, which is what
-# the Unraid template tracks — so merging to main never reaches users on its own.
-# Prepare one with `node scripts/release.mjs`, merge its release PR, then run the
-# same command on updated main to tag the reviewed commit and push that tag.
+# Tag-driven. A merged release/vX.Y.Z PR creates its tag through
+# tag-merged-release.yml; a manually pushed recovery tag still works. Ordinary
+# merges never enter this workflow and only update edge.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write # to create the GitHub Release
@@ -51,38 +51,8 @@ jobs:
 
       # A tag whose tree says a different version would publish images labelled
       # with one number and reporting another. Fail before anything is pushed.
-      - name: Package manifest versions agree with the tag
-        run: |
-          version="${{ steps.v.outputs.version }}"
-          for dir in backend frontend; do
-            for f in "$dir/package.json" "$dir/package-lock.json"; do
-              found=$(node -p "require('./$f').version")
-              if [ "$found" != "$version" ]; then
-                echo "::error::$f is $found but the tag is v$version — run scripts/release.mjs"
-                exit 1
-              fi
-            done
-            root=$(node -p "require('./$dir/package-lock.json').packages[''].version")
-            if [ "$root" != "$version" ]; then
-              echo "::error::$dir/package-lock.json root package is $root but the tag is v$version"
-              exit 1
-            fi
-          done
-
-      # The tag must sit on the release line .version declares. Catches a tag typed
-      # by hand, or a MAJOR/MINOR bump that was merged but never released from.
-      - name: The tag is on the line .version declares
-        run: |
-          line=$(node scripts/next-version.mjs --line)
-          case "${{ steps.v.outputs.version }}" in
-            "$line".*) ;;
-            *) echo "::error::tag v${{ steps.v.outputs.version }} is not on line $line (.version)"; exit 1 ;;
-          esac
-
-      - name: CHANGELOG has an entry for this version
-        run: |
-          grep -q "^## \[${{ steps.v.outputs.version }}\]" CHANGELOG.md \
-            || { echo "::error::no CHANGELOG.md section for ${{ steps.v.outputs.version }}"; exit 1; }
+      - name: Prepared release agrees with the tag
+        run: node scripts/verify-prepared-release.mjs "${{ steps.v.outputs.version }}"
 
       - run: node scripts/validate-template.mjs
 

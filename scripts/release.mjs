@@ -6,10 +6,10 @@
  * reviewed in the PR that needed the bump) and PATCH from the existing tags for
  * that line. The script fetches the remote tags before resolving it.
  *
- * This is deliberately a two-pass command so protected main never needs a bypass:
- *   1. On main, it creates release/vX.Y.Z with the release edits and a commit.
- *   2. After that branch is reviewed and merged, run it again on main to tag the
- *      merged commit. Nothing is published until that tag is pushed.
+ * On main, it creates release/vX.Y.Z with the release edits and a commit. After
+ * that branch is reviewed and merged, GitHub validates and tags the merge commit,
+ * then starts publication. Nothing is published merely by merging an ordinary PR.
+ * Running this again on a fully prepared main remains a manual recovery path.
  *
  * It updates:
  *   - both package.json and package-lock.json versions
@@ -192,4 +192,4 @@ git('commit', '-m', `chore(release): v${version}`);
 
 console.log(`\n✓ prepared v${version} on release/v${version}`);
 console.log(`  Push the branch and open a PR:  git push -u origin release/v${version}`);
-console.log('  After it merges, update main and run this command again to create the tag.');
+console.log('  After it passes review and merges, GitHub tags and publishes it automatically.');
