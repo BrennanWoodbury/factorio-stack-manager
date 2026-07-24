@@ -2,8 +2,8 @@ name: Release
 
 # Tag-driven. Pushing `vX.Y.Z` is the only thing that moves `latest`, which is what
 # the Unraid template tracks — so merging to main never reaches users on its own.
-# Cut one with `node scripts/release.mjs` (the number comes from .version plus the
-# existing tags), then push --follow-tags.
+# Prepare one with `node scripts/release.mjs`, merge its release PR, then run the
+# same command on updated main to tag the reviewed commit and push that tag.
 on:
   push:
     tags: ['v*']

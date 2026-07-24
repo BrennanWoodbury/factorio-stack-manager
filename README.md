@@ -355,14 +355,19 @@ Releases are tag-driven, so merging to `main` never reaches users: `main` publis
 `edge`, and `latest` — which the Unraid template tracks — moves solely on a version tag.
 
 ```bash
-# edit CHANGELOG.md under [Unreleased], then:
-node scripts/release.mjs            # resolves the version, promotes the changelog,
-                                    # updates manifests + template, commits and tags
-git push --follow-tags origin main
+# Edit CHANGELOG.md under [Unreleased], update local main, then:
+node scripts/release.mjs            # creates release/vX.Y.Z and commits the release files
+git push -u origin release/vX.Y.Z   # open, review, and merge this release PR
+
+# Back on updated main after the PR merges:
+node scripts/release.mjs            # recognizes the prepared release and tags this commit
+git push origin vX.Y.Z              # publishes the image and GitHub Release
 ```
 
-The command fetches tags before resolving the patch and refuses to release unless local
-`main` is exactly `origin/main`. The version cannot be supplied by hand.
+The command fetches tags before resolving the patch and refuses to prepare or tag unless
+local `main` is exactly `origin/main`. The version cannot be supplied by hand. Splitting
+preparation from tagging keeps the release changes inside the normal reviewed-PR path;
+protected `main` needs no release bypass.
 
 The tag triggers `.github/workflows/release.yml`, which re-checks that the tree agrees
 with the tag, runs the tests, publishes `1.2.3` / `1.2` / `1` / `latest` (stamping
@@ -417,7 +422,7 @@ as a breaking change.
 
 ### Continuous integration
 
-.github/workflows/ci.yml` runs the backend (typecheck + `node:test`), the frontend (typecheck +
+`.github/workflows/ci.yml` runs the backend (typecheck + `node:test`), the frontend (typecheck +
 vitest + Vite build), `scripts/validate-template.mjs` and — on pull requests —
 `scripts/impact-check.mjs`. The template check
 is not optional politeness: Community Applications serves `templates/*.xml` and `ca_profile.xml`
@@ -428,6 +433,10 @@ Image publishing is opt-in on ordinary `main` pushes: a fork without `DOCKERHUB_
 green checks. A release tag is different—it fails before publishing if `DOCKERHUB_IMAGE`,
 `DOCKERHUB_USERNAME`, or `DOCKERHUB_TOKEN` is missing, rather than silently skipping the image and
 GitHub Release.
+
+When `README.md` changes on `main`, `.github/workflows/dockerhub-description.yml` publishes it as
+the Docker Hub repository overview using that same image variable and credentials. The action is
+pinned to an immutable commit so an upstream tag cannot silently change what runs with the token.
 
 ---
 

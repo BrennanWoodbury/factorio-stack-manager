@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { readLine, highestPatch } from '../../scripts/next-version.mjs';
+import { isReleasePrepared } from '../../scripts/release-state.mjs';
 
 /**
  * The release number is half human (.version) and half derived (git tags). These
@@ -63,4 +64,15 @@ test('the repo’s own .version is valid', () => {
   const line = readLine(path.resolve(import.meta.dirname, '../../.version'));
   assert.ok(Number.isInteger(line.major) && line.major >= 0);
   assert.ok(Number.isInteger(line.minor) && line.minor >= 0);
+});
+
+test('a release is taggable only when every generated surface agrees', () => {
+  const changelog = '## [Unreleased]\n\n## [1.2.3] - 2026-07-24\n\nNotes\n';
+  const template = '<Changes>\n### 1.2.3 - 2026-07-24\n\nNotes\n</Changes>';
+  const manifests = ['1.2.3', '1.2.3', '1.2.3', '1.2.3', '1.2.3', '1.2.3'];
+
+  assert.equal(isReleasePrepared('1.2.3', manifests, changelog, template), true);
+  assert.equal(isReleasePrepared('1.2.3', [...manifests.slice(0, -1), '1.2.2'], changelog, template), false);
+  assert.equal(isReleasePrepared('1.2.3', manifests, changelog.replace('1.2.3', '1.2.2'), template), false);
+  assert.equal(isReleasePrepared('1.2.3', manifests, changelog, template.replace('1.2.3', '1.2.2')), false);
 });

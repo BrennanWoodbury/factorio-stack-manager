@@ -6,9 +6,10 @@
  * reviewed in the PR that needed the bump) and PATCH from the existing tags for
  * that line. The script fetches the remote tags before resolving it.
  *
- * Everything a release touches lives in the repository, so this does the edits and
- * leaves you with a commit and a tag to push. Nothing is published until the tag
- * lands — that is what keeps merging to main from reaching users.
+ * This is deliberately a two-pass command so protected main never needs a bypass:
+ *   1. On main, it creates release/vX.Y.Z with the release edits and a commit.
+ *   2. After that branch is reviewed and merged, run it again on main to tag the
+ *      merged commit. Nothing is published until that tag is pushed.
  *
  * It updates:
  *   - both package.json and package-lock.json versions
@@ -23,6 +24,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readLine, highestPatch } from './next-version.mjs';
+import { isReleasePrepared } from './release-state.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATE = path.join(root, 'templates/factorio-tools-manager.xml');
@@ -55,17 +57,6 @@ const { major, minor } = readLine();
 const version = `${major}.${minor}.${highestPatch(major, minor, tags) + 1}`;
 console.log(`Releasing v${version} (.version says ${major}.${minor})`);
 
-// ---- Preconditions --------------------------------------------------------
-if (!dryRun) {
-  if (git('status', '--porcelain')) die('working tree is dirty — commit or stash first');
-  const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
-  if (branch !== 'main') die(`releases are cut from main, currently on "${branch}"`);
-  const head = git('rev-parse', 'HEAD');
-  const remoteMain = git('rev-parse', 'origin/main');
-  if (head !== remoteMain) die('local main is not exactly origin/main — pull or push before releasing');
-  if (tags.includes(`v${version}`)) die(`tag v${version} already exists`);
-}
-
 const today = new Date().toISOString().slice(0, 10);
 
 // ---- CHANGELOG ------------------------------------------------------------
@@ -74,7 +65,68 @@ const unreleased = changelog.match(/## \[Unreleased\]\s*\n([\s\S]*?)(?=\n## \[|\
 if (!unreleased) die('could not find an [Unreleased] section in CHANGELOG.md');
 
 const notes = unreleased[1].trim();
-if (!notes) die('[Unreleased] is empty — describe the release before tagging it');
+
+const manifestFiles = [
+  'backend/package.json',
+  'backend/package-lock.json',
+  'frontend/package.json',
+  'frontend/package-lock.json',
+];
+const manifestVersions = manifestFiles.flatMap((rel) => {
+  const json = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
+  return rel.endsWith('package-lock.json')
+    ? [json.version, json.packages?.['']?.version]
+    : [json.version];
+});
+const templateBefore = fs.readFileSync(TEMPLATE, 'utf8');
+const releasePrepared = isReleasePrepared(version, manifestVersions, changelog, templateBefore);
+
+// ---- Preconditions / second pass -----------------------------------------
+if (!dryRun && git('status', '--porcelain', '--untracked-files=no')) {
+  die('tracked working tree is dirty — commit or stash first');
+}
+
+if (releasePrepared) {
+  if (dryRun) {
+    console.log(`--- would tag the prepared release v${version} ---`);
+    process.exit(0);
+  }
+
+  const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
+  if (branch !== 'main') {
+    die(`v${version} is prepared; merge its release PR, update main, then run this command again`);
+  }
+  const head = git('rev-parse', 'HEAD');
+  const remoteMain = git('rev-parse', 'origin/main');
+  if (head !== remoteMain) die('local main is not exactly origin/main — pull before tagging');
+  if (tags.includes(`v${version}`)) die(`tag v${version} already exists`);
+
+  execFileSync('node', [path.join(root, 'scripts/validate-template.mjs')], { stdio: 'inherit' });
+  git('tag', '-a', `v${version}`, '-m', `v${version}`);
+  console.log(`\n✓ tagged the reviewed main commit as v${version}`);
+  console.log(`  Publish it with:  git push origin v${version}`);
+  process.exit(0);
+}
+
+if (!notes) die('[Unreleased] is empty — describe the release before preparing it');
+
+if (!dryRun) {
+  const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
+  if (branch !== 'main') die(`release preparation starts from main, currently on "${branch}"`);
+  const head = git('rev-parse', 'HEAD');
+  const remoteMain = git('rev-parse', 'origin/main');
+  if (head !== remoteMain) die('local main is not exactly origin/main — pull before preparing a release');
+  if (tags.includes(`v${version}`)) die(`tag v${version} already exists`);
+
+  const releaseBranch = `release/v${version}`;
+  try {
+    git('show-ref', '--verify', '--quiet', `refs/heads/${releaseBranch}`);
+    die(`local branch ${releaseBranch} already exists`);
+  } catch (error) {
+    if (error?.status !== 1) throw error;
+  }
+  git('switch', '-c', releaseBranch);
+}
 
 const previous = changelog.match(/## \[(\d+\.\d+\.\d+)\]/)?.[1];
 changelog = changelog.replace(
@@ -111,7 +163,7 @@ const lockEdits = ['backend/package-lock.json', 'frontend/package-lock.json'].ma
 const manifestEdits = [...pkgEdits, ...lockEdits];
 
 // ---- Unraid template ------------------------------------------------------
-let template = fs.readFileSync(TEMPLATE, 'utf8');
+let template = templateBefore;
 template = template.replace(/<Date>[^<]*<\/Date>/, `<Date>${today}</Date>`);
 // <Changes> is rendered by CA as the "what's new" for the listing.
 const changesBody = [`### ${version} - ${today}`, '', notes].join('\n');
@@ -137,7 +189,7 @@ execFileSync('node', [path.join(root, 'scripts/validate-template.mjs')], { stdio
 
 git('add', 'CHANGELOG.md', 'templates/factorio-tools-manager.xml', ...manifestEdits.map(([rel]) => rel));
 git('commit', '-m', `chore(release): v${version}`);
-git('tag', '-a', `v${version}`, '-m', `v${version}`);
 
-console.log(`\n✓ committed and tagged v${version}`);
-console.log('  Review, then publish with:  git push --follow-tags origin main');
+console.log(`\n✓ prepared v${version} on release/v${version}`);
+console.log(`  Push the branch and open a PR:  git push -u origin release/v${version}`);
+console.log('  After it merges, update main and run this command again to create the tag.');
