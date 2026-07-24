@@ -62,6 +62,25 @@ jobs:
       # users see, so a malformed template must fail here or not at all.
       - run: node scripts/validate-template.mjs
 
+  impact:
+    name: User-facing impact
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needs the base ref to diff against
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      # Fails when a change touches something users depend on (a one-way migration,
+      # a removed Unraid Config target, a renamed env var, a changed port default)
+      # without .version being bumped to match. Set IMPACT_OVERRIDE=true on a re-run
+      # if a finding is a false positive — and say why in the PR.
+      - run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          node scripts/impact-check.mjs "origin/${{ github.base_ref }}"
+
   image:
     name: Build & push edge image
     needs: [backend, frontend, template]

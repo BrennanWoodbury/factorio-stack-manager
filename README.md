@@ -356,7 +356,7 @@ Releases are tag-driven, so merging to `main` never reaches users: `main` publis
 
 ```bash
 # edit CHANGELOG.md under [Unreleased], then:
-node scripts/release.mjs 1.2.3      # bumps versions, promotes the changelog,
+node scripts/release.mjs            # resolves the version, promotes the changelog,
                                     # updates the template, commits and tags
 git push --follow-tags origin main
 ```
@@ -365,13 +365,56 @@ The tag triggers `.github/workflows/release.yml`, which re-checks that the tree 
 with the tag, runs the tests, publishes `1.2.3` / `1.2` / `1` / `latest` (stamping
 `APP_VERSION` into the image), and opens a GitHub Release from the changelog section.
 
+#### Where the version number comes from
+
+`.version` holds the release **line** and nothing else:
+
+```
+MAJOR=1
+MINOR=0
+```
+
+Those two are human-controlled, and deliberately live in a file rather than in a tool's
+head: a bump is reviewed in the pull request that made it necessary, so a `MAJOR=2` line
+and its `UPGRADING.md` section land in the same diff where a reviewer sees them together.
+
+The **patch is derived**, not stored — `scripts/next-version.mjs` reads the existing tags
+for the line and takes the highest plus one, or `.0` if the line is new. Tags are already
+the record of what shipped, so deriving from them avoids CI committing a number back to
+`main`: no bot commit re-triggering CI, no write access to the default branch, and no race
+between two merges landing seconds apart. Creating a tag is atomic and a duplicate fails
+loudly. Bumping `MINOR` restarts the patch at `.0` by itself, because no tags exist for
+the new line yet.
+
+#### The impact check
+
+Deciding *when* something is breaking is not left to memory. On every pull request,
+`scripts/impact-check.mjs` diffs the branch against its base and fails if a user-facing
+surface moved without `.version` moving to match:
+
+| Detected | Level |
+| --- | --- |
+| A migration marked `backwardCompatible: false` | major — rolling back now needs a snapshot restore |
+| An Unraid template `Config` target removed or renamed | major — Unraid silently drops the user's saved value |
+| An environment variable no longer read | major — it's in somebody's compose file |
+| A changed default game/RCON port range | major — they forwarded the old one on a router |
+| The Unraid data mount path moved | major |
+| New additive migrations | minor |
+| New environment variables | minor |
+
+These read what actually changed rather than which files were touched. That distinction
+is the whole point: a file-level trigger would fire on 13 of this repo's 14 migrations,
+every one a harmless `ADD COLUMN`, and a check that cries wolf that often gets ignored.
+Set `IMPACT_OVERRIDE=true` to accept a false positive, and say why in the pull request.
+
 See [UPGRADING.md](UPGRADING.md) for the tag policy, rollback procedure, and what counts
 as a breaking change.
 
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs the backend (typecheck + `node:test`), the frontend (typecheck +
-vitest + Vite build) and `scripts/validate-template.mjs` on every push and PR. The template check
+vitest + Vite build), `scripts/validate-template.mjs` and — on pull requests —
+`scripts/impact-check.mjs`. The template check
 is not optional politeness: Community Applications serves `templates/*.xml` and `ca_profile.xml`
 straight from `main`'s raw URLs, so a malformed template is live the moment it merges. On pushes it additionally builds and publishes the Docker image,
 tagged `latest` and `sha-<short>`.

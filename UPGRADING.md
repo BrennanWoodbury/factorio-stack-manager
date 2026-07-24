@@ -34,16 +34,26 @@ releases allowed to require anything of you, and the steps will be written there
 Set the image tag to the version you want — on Unraid, edit the container's Repository
 field to e.g. `brennanwoodbury/factorio-manager:1.4.2` and apply.
 
-**If the newer version applied a migration, restore its snapshot too.** Migrations only
-run forward, so an older build cannot read a newer schema. It will tell you so and
-refuse to start rather than operate on a schema it doesn't understand:
+**Most rollbacks need nothing extra.** Migrations record whether they can be read
+backwards. Almost all of them are additive — they add a column an older build simply
+ignores — so an older image starts normally on a newer database and says so:
 
 ```
-This database is at schema v18, but this version of the manager only understands up to
-v14. It was last opened by a newer release.
+database is at schema v18, newer than this build's v14, but every change since is
+backward compatible — continuing.
 ```
 
-To go back:
+**Only a one-way migration blocks it**, and then the manager refuses to start rather
+than operating on a schema it can't read:
+
+```
+This database is at schema v18 and requires a build that understands at least v17;
+this one only understands up to v14. A release newer than this one made a change that
+cannot be read backwards.
+```
+
+Releases containing one are called out in the notes, because they're the ones where
+rolling back costs you something. To go back from one:
 
 1. Stop the manager.
 2. In `<data>/db-backups/`, find the newest snapshot whose `v<number>` is one the older
@@ -69,8 +79,15 @@ These are treated as a public contract. Changing any of them incompatibly requir
 - **Default ports and port-range behaviour** — people have forwarded these on a router.
 - **Anything requiring manual action after an update.**
 
+Most of that list is checked mechanically on every pull request rather than left to
+memory — see the impact check in the [README](README.md#the-impact-check). A change that
+trips it can't merge until `.version` is bumped to match.
+
 Deliberately *not* covered: the HTTP API. The SPA ships in the same image as the backend
 it talks to, so the two are always in step and the API is internal.
 
-Migrations are additive wherever possible. A migration that destroys data is a major
-version on its own, and the release notes say so explicitly.
+Migrations are additive wherever possible, and each one declares whether an older build
+can still read the database afterwards (`backwardCompatible`). Additive ones are a minor
+at most — they cost a user nothing, including the ability to roll back. A migration that
+renames, removes or rewrites what an older build reads is a major on its own, is flagged
+by the impact check, and the release notes say so explicitly.

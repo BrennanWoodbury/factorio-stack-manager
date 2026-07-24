@@ -38,10 +38,17 @@ here on, `latest` only moves when a version is tagged.
   `recycler` is handled without a code change and impossible mode/version
   combinations are refused with an explanation.
 
+### Release process
+
+- Versions come from `.version` (the human-controlled MAJOR.MINOR line) plus the
+  existing git tags (the derived patch), and a CI impact check refuses a change that
+  moves a user-facing surface without a matching version bump.
+
 ### Safety
 
-- The database is snapshotted to `db-backups/` before any migration runs, and the
-  manager refuses to start against a database written by a newer release rather than
-  operating on a schema it doesn't understand.
+- The database is snapshotted to `db-backups/` before any migration runs.
+- Migrations declare whether an older build can still read the database afterwards, so
+  rolling back across the additive ones — nearly all of them — just works. The manager
+  refuses to start only when a release made a genuinely one-way change.
 
 [Unreleased]: https://github.com/BrennanWoodbury/factorio-tools-manager/commits/main

@@ -2,7 +2,8 @@ name: Release
 
 # Tag-driven. Pushing `vX.Y.Z` is the only thing that moves `latest`, which is what
 # the Unraid template tracks — so merging to main never reaches users on its own.
-# Cut one with `node scripts/release.mjs X.Y.Z`, then push --follow-tags.
+# Cut one with `node scripts/release.mjs` (the number comes from .version plus the
+# existing tags), then push --follow-tags.
 on:
   push:
     tags: ['v*']
@@ -37,6 +38,16 @@ jobs:
               exit 1
             fi
           done
+
+      # The tag must sit on the release line .version declares. Catches a tag typed
+      # by hand, or a MAJOR/MINOR bump that was merged but never released from.
+      - name: The tag is on the line .version declares
+        run: |
+          line=$(node scripts/next-version.mjs --line)
+          case "${{ steps.v.outputs.version }}" in
+            "$line".*) ;;
+            *) echo "::error::tag v${{ steps.v.outputs.version }} is not on line $line (.version)"; exit 1 ;;
+          esac
 
       - name: CHANGELOG has an entry for this version
         run: |
