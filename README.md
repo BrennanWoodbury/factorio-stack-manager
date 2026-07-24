@@ -357,9 +357,12 @@ Releases are tag-driven, so merging to `main` never reaches users: `main` publis
 ```bash
 # edit CHANGELOG.md under [Unreleased], then:
 node scripts/release.mjs            # resolves the version, promotes the changelog,
-                                    # updates the template, commits and tags
+                                    # updates manifests + template, commits and tags
 git push --follow-tags origin main
 ```
+
+The command fetches tags before resolving the patch and refuses to release unless local
+`main` is exactly `origin/main`. The version cannot be supplied by hand.
 
 The tag triggers `.github/workflows/release.yml`, which re-checks that the tree agrees
 with the tag, runs the tests, publishes `1.2.3` / `1.2` / `1` / `latest` (stamping
@@ -414,17 +417,17 @@ as a breaking change.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs the backend (typecheck + `node:test`), the frontend (typecheck +
+.github/workflows/ci.yml` runs the backend (typecheck + `node:test`), the frontend (typecheck +
 vitest + Vite build), `scripts/validate-template.mjs` and — on pull requests —
 `scripts/impact-check.mjs`. The template check
 is not optional politeness: Community Applications serves `templates/*.xml` and `ca_profile.xml`
-straight from `main`'s raw URLs, so a malformed template is live the moment it merges. On pushes it additionally builds and publishes the Docker image,
-tagged `latest` and `sha-<short>`.
+straight from `main`'s raw URLs, so a malformed template is live the moment it merges. On pushes
+it additionally builds and publishes the Docker image as `edge` and `main-<short-sha>`.
 
-The publish job is **opt-in and self-disabling**: it is skipped unless the repository variable
-`DOCKERHUB_IMAGE` is set (e.g. `youruser/factorio-tools-manager`), so a fork with no registry
-configured still gets green checks. To enable it, set that variable plus the secrets
-`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`.
+Image publishing is opt-in on ordinary `main` pushes: a fork without `DOCKERHUB_IMAGE` still gets
+green checks. A release tag is different—it fails before publishing if `DOCKERHUB_IMAGE`,
+`DOCKERHUB_USERNAME`, or `DOCKERHUB_TOKEN` is missing, rather than silently skipping the image and
+GitHub Release.
 
 ---
 

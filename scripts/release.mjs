@@ -4,14 +4,14 @@
  *
  * The version is resolved, not typed: MAJOR.MINOR comes from `.version` (human,
  * reviewed in the PR that needed the bump) and PATCH from the existing tags for
- * that line. Pass an explicit version only to override.
+ * that line. The script fetches the remote tags before resolving it.
  *
  * Everything a release touches lives in the repository, so this does the edits and
  * leaves you with a commit and a tag to push. Nothing is published until the tag
  * lands — that is what keeps merging to main from reaching users.
  *
  * It updates:
- *   - both package.json versions
+ *   - both package.json and package-lock.json versions
  *   - CHANGELOG.md: moves [Unreleased] into the new version, dated today
  *   - the Unraid template's <Date> and <Changes> (Community Applications serves
  *     that file straight off main, so it has to describe what users will get)
@@ -31,7 +31,6 @@ const REPO_URL = 'https://github.com/BrennanWoodbury/factorio-tools-manager';
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
-const override = args.find((a) => !a.startsWith('--'));
 
 const die = (msg) => {
   console.error(`✗ ${msg}`);
@@ -39,17 +38,31 @@ const die = (msg) => {
 };
 const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim();
 
+const unknownArgs = args.filter((arg) => arg !== '--dry-run');
+if (unknownArgs.length > 0) die(`unknown argument(s): ${unknownArgs.join(', ')} — the version is derived, not supplied`);
+
+// Tags decide PATCH, so stale local tags can produce the wrong release number.
+// Fetch main at the same time so a real release can prove it starts from the
+// exact remote tip rather than a merely clean local branch named main.
+try {
+  git('fetch', '--tags', '--prune', 'origin', 'main');
+} catch {
+  die('could not fetch origin/main and release tags');
+}
+
 const tags = git('tag', '--list').split('\n').map((t) => t.trim()).filter(Boolean);
 const { major, minor } = readLine();
-const version = override ?? `${major}.${minor}.${highestPatch(major, minor, tags) + 1}`;
-if (!/^\d+\.\d+\.\d+$/.test(version)) die(`version must be MAJOR.MINOR.PATCH, got "${version}"`);
-console.log(`Releasing v${version}${override ? ' (overridden)' : ` (.version says ${major}.${minor})`}`);
+const version = `${major}.${minor}.${highestPatch(major, minor, tags) + 1}`;
+console.log(`Releasing v${version} (.version says ${major}.${minor})`);
 
 // ---- Preconditions --------------------------------------------------------
 if (!dryRun) {
   if (git('status', '--porcelain')) die('working tree is dirty — commit or stash first');
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
   if (branch !== 'main') die(`releases are cut from main, currently on "${branch}"`);
+  const head = git('rev-parse', 'HEAD');
+  const remoteMain = git('rev-parse', 'origin/main');
+  if (head !== remoteMain) die('local main is not exactly origin/main — pull or push before releasing');
   if (tags.includes(`v${version}`)) die(`tag v${version} already exists`);
 }
 
@@ -80,13 +93,22 @@ if (!changelog.includes(`[${version}]: `)) {
   changelog = changelog.replace(/(\[Unreleased\]: .*\n)/, `$1${link}\n`);
 }
 
-// ---- package.json ---------------------------------------------------------
+// ---- package manifests ----------------------------------------------------
 const pkgEdits = ['backend/package.json', 'frontend/package.json'].map((rel) => {
   const file = path.join(root, rel);
   const json = JSON.parse(fs.readFileSync(file, 'utf8'));
   json.version = version;
-  return [file, `${JSON.stringify(json, null, 2)}\n`];
+  return [rel, file, `${JSON.stringify(json, null, 2)}\n`];
 });
+const lockEdits = ['backend/package-lock.json', 'frontend/package-lock.json'].map((rel) => {
+  const file = path.join(root, rel);
+  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  json.version = version;
+  if (!json.packages?.['']) die(`${rel} has no root package entry`);
+  json.packages[''].version = version;
+  return [rel, file, `${JSON.stringify(json, null, 2)}\n`];
+});
+const manifestEdits = [...pkgEdits, ...lockEdits];
 
 // ---- Unraid template ------------------------------------------------------
 let template = fs.readFileSync(TEMPLATE, 'utf8');
@@ -103,17 +125,17 @@ template = template.replace(
 if (dryRun) {
   console.log(`--- would release v${version} (${today}) ---\n`);
   console.log(notes);
-  console.log(`\n--- files: CHANGELOG.md, templates/…xml, ${pkgEdits.length} package.json ---`);
+  console.log(`\n--- files: CHANGELOG.md, templates/…xml, ${manifestEdits.length} package manifests ---`);
   process.exit(0);
 }
 
 fs.writeFileSync(CHANGELOG, changelog);
 fs.writeFileSync(TEMPLATE, template);
-for (const [file, body] of pkgEdits) fs.writeFileSync(file, body);
+for (const [, file, body] of manifestEdits) fs.writeFileSync(file, body);
 
 execFileSync('node', [path.join(root, 'scripts/validate-template.mjs')], { stdio: 'inherit' });
 
-git('add', 'CHANGELOG.md', 'templates/factorio-tools-manager.xml', 'backend/package.json', 'frontend/package.json');
+git('add', 'CHANGELOG.md', 'templates/factorio-tools-manager.xml', ...manifestEdits.map(([rel]) => rel));
 git('commit', '-m', `chore(release): v${version}`);
 git('tag', '-a', `v${version}`, '-m', `v${version}`);
 

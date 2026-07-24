@@ -19,6 +19,8 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
@@ -26,15 +28,43 @@ jobs:
       - id: v
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Publishing configuration is present
+        env:
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          missing=()
+          for name in DOCKERHUB_IMAGE DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::release publishing is not configured: missing ${missing[*]}"
+            exit 1
+          fi
+
+      - name: The tag commit is on main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::release tag is not reachable from main"; exit 1; }
+
       # A tag whose tree says a different version would publish images labelled
       # with one number and reporting another. Fail before anything is pushed.
-      - name: package.json versions agree with the tag
+      - name: Package manifest versions agree with the tag
         run: |
           version="${{ steps.v.outputs.version }}"
-          for f in backend/package.json frontend/package.json; do
-            found=$(node -p "require('./$f').version")
-            if [ "$found" != "$version" ]; then
-              echo "::error::$f is $found but the tag is v$version — run scripts/release.mjs"
+          for dir in backend frontend; do
+            for f in "$dir/package.json" "$dir/package-lock.json"; do
+              found=$(node -p "require('./$f').version")
+              if [ "$found" != "$version" ]; then
+                echo "::error::$f is $found but the tag is v$version — run scripts/release.mjs"
+                exit 1
+              fi
+            done
+            root=$(node -p "require('./$dir/package-lock.json').packages[''].version")
+            if [ "$root" != "$version" ]; then
+              echo "::error::$dir/package-lock.json root package is $root but the tag is v$version"
               exit 1
             fi
           done
@@ -76,7 +106,6 @@ jobs:
   publish:
     name: Publish image
     needs: [verify, test]
-    if: vars.DOCKERHUB_IMAGE != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
