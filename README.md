@@ -11,7 +11,9 @@ routing is done entirely by DNS **SRV records**.
 - Runs as a single container that manages sibling Factorio containers via the Docker socket.
 
 Already running it? [UPGRADING.md](UPGRADING.md) covers which image tag to track, how to roll
-back, and what will and won't change under you. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+back, and what will and won't change under you. Published changes are listed in
+[GitHub Releases](https://github.com/BrennanWoodbury/factorio-tools-manager/releases), with
+[CHANGELOG.md](CHANGELOG.md) retained for optional curated history.
 Project stewardship and review requirements are documented in [MAINTAINERS.md](MAINTAINERS.md).
 
 ---
@@ -356,92 +358,92 @@ viewer's tests stub it and drive `ended` / `error` by hand. That makes reconnect
 
 ### Releases
 
-Releases are tag-driven. Ordinary merges to `main` publish only `edge`; merging a reviewed
-`release/vX.Y.Z` PR deliberately creates its version tag. `latest` — which the Unraid template
-tracks — moves solely when that tagged release passes publication.
+Reviewed changes release directly from their merge commit when they alter a shipped runtime
+surface. Runtime changes create patch releases, additive database migrations create minor
+releases, and breaking contracts require a manually reviewed one-step MAJOR increase. Changes
+limited to documentation, tests, CI, and maintainer tooling publish no release.
 
 ```bash
-# Edit CHANGELOG.md under [Unreleased], update local main, then:
-node scripts/release.mjs            # creates release/vX.Y.Z and commits the release files
-git push -u origin release/vX.Y.Z   # open, review, and merge this release PR;
-                                    # GitHub tags and publishes the merge automatically
+# Read-only local preview of a committed branch:
+git fetch origin main --tags
+node scripts/version-policy.mjs --base origin/main
 ```
 
-The command fetches tags before resolving the patch and refuses to prepare unless local
-`main` is exactly `origin/main`. The version cannot be supplied by hand. After the release PR
-passes the normal checks and approval, `.github/workflows/tag-merged-release.yml` validates the
-merged tree, creates the tag on that exact reviewed commit, and starts publication. The tag step
-is idempotent so a failed dispatch can be rerun safely; protected `main` needs no release bypass.
+`.github/workflows/release.yml` is the serialized main-merge coordinator. After acquiring its
+repository-wide lock it re-fetches tags, recalculates the version, verifies the merged pull
+request still has a current non-author maintainer approval, and reruns backend tests, frontend
+tests/build, and Unraid template validation. Only then does it create an annotated tag on the
+exact merge SHA and publish `1.2.3` / `1.2` / `1` / `latest`, stamping `APP_VERSION=1.2.3` into
+the image. GitHub generates the Release notes from pull requests merged since the prior tag.
 
-An ordinary merge is **not** a release. It may update `edge` and `main-<short-sha>`, but it does
-not create a version tag or move `latest`. Internal work such as CI or documentation normally
-leaves `.version` unchanged. That file moves only when a user-facing change requires a new major
-or minor line; patches are derived from release tags when a release is deliberately prepared.
+The coordinator is idempotent. A manual workflow dispatch can reconcile a run interrupted after
+tagging. If a newer release already exists, reconciliation publishes only the older immutable
+version alias and GitHub Release; it never moves `latest`, major, or minor aliases backward. If
+invalid policy somehow reaches `main`, the workflow emits a prominent summary and stops before
+creating a tag, Docker image, or GitHub Release.
 
-The tag dispatches `.github/workflows/release.yml`, which re-checks that the tree agrees
-with the tag, runs the tests, publishes `1.2.3` / `1.2` / `1` / `latest` (stamping
-`APP_VERSION` into the image), and opens a GitHub Release from the changelog section.
+Every push to `main` may still publish `edge` and `main-<short-sha>` for testing. `latest` — which
+the Unraid template tracks — moves only after a calculated release passes the coordinator.
 
 #### Where the version number comes from
 
-`.version` holds the release **line** and nothing else:
+`.version` holds only the manually controlled major:
 
 ```
 MAJOR=1
-MINOR=0
 ```
 
-Those two are human-controlled, and deliberately live in a file rather than in a tool's
-head: a bump is reviewed in the pull request that made it necessary, so a `MAJOR=2` line
-and its `UPGRADING.md` section land in the same diff where a reviewer sees them together.
+The MAJOR may remain unchanged or increase by exactly one. Decreases and skipped values fail CI.
+A bump is reviewed in the pull request that made it necessary, so `MAJOR=2` and its documented
+upgrade path land in the same diff where a reviewer sees them together.
 
-The **patch is derived**, not stored — `scripts/next-version.mjs` reads the existing tags
-for the line and takes the highest plus one, or `.0` if the line is new. Tags are already
-the record of what shipped, so deriving from them avoids CI committing a number back to
-`main`: no bot commit re-triggering CI, no write access to the default branch, and no race
-between two merges landing seconds apart. Creating a tag is atomic and a duplicate fails
-loudly. Bumping `MINOR` restarts the patch at `.0` by itself, because no tags exist for
-the new line yet.
+Minor and patch are derived from the latest reachable valid `vMAJOR.MINOR.PATCH` tag and the
+detected change. A runtime change after `v1.0.0` becomes `v1.0.1`; an additive migration after
+`v1.0.7` becomes `v1.1.0`; the next runtime change becomes `v1.1.1`; and a manual `MAJOR=2`
+becomes `v2.0.0`. Malformed tags are ignored and versions compare numerically.
 
-#### The impact check
+Tags are the authoritative shipping record, so CI never commits version changes back to `main`.
+The private package manifests remain at neutral `0.0.0`; the tag and Docker build's
+`APP_VERSION` are what the application reports at runtime.
 
-Deciding *when* something is breaking is not left to memory. On every pull request,
-`scripts/impact-check.mjs` diffs the branch against its base and fails if a user-facing
-surface moved without `.version` moving to match:
+#### The version policy check
 
-| Detected | Level |
+On every pull request, `scripts/version-policy.mjs` reports the detected release class, the files
+and rules responsible, the predicted version, and any policy violation:
+
+| Detected change | Release class |
 | --- | --- |
-| A migration marked `backwardCompatible: false` | major — rolling back now needs a snapshot restore |
-| An Unraid template `Config` target removed or renamed | major — Unraid silently drops the user's saved value |
-| An environment variable no longer read | major — it's in somebody's compose file |
-| A changed default game/RCON port range | major — they forwarded the old one on a router |
-| The Unraid data mount path moved | major |
-| New additive migrations | minor |
-| New environment variables | minor |
+| Manual one-step MAJOR increase | major, resetting minor and patch to zero |
+| One-way migration (`backwardCompatible: false`) | major; rejected without the manual increase |
+| Removed environment variable or Unraid `Config` target | major; rejected without the manual increase |
+| Changed default game/RCON port range or moved data mount | major; rejected without the manual increase |
+| Appended additive migration (`backwardCompatible: true`) | minor, resetting patch to zero |
+| Runtime source, production assets, dependencies, Docker/Compose, or Unraid runtime config | patch |
+| Documentation, tests, workflows, development Compose, or `scripts/` tooling alone | no release |
 
-These read what actually changed rather than which files were touched. That distinction
-is the whole point: a file-level trigger would fire on 13 of this repo's 14 migrations,
-every one a harmless `ADD COLUMN`, and a check that cries wolf that often gets ignored.
-For a false positive, explain why in the pull request and ask a maintainer to apply the
-`impact-reviewed` label. Applying or removing the label reruns the check, and leaves the
-exception visible in the pull request history.
+Schema changes must append the next numbered migration and explicitly declare
+`backwardCompatible`. Editing an existing migration, changing schema without a migration, or
+adding a one-way migration without the next MAJOR fails the check. Release-only package version
+fields and the Unraid release-history link are normalized away so maintaining that metadata does
+not create a false patch release.
 
 See [UPGRADING.md](UPGRADING.md) for the tag policy, rollback procedure, and what counts
 as a breaking change.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs the backend (typecheck + `node:test`), the frontend (typecheck +
-vitest + Vite build), `scripts/validate-template.mjs` and — on pull requests —
-`scripts/impact-check.mjs`. The template check
-is not optional politeness: Community Applications serves `templates/*.xml` and `ca_profile.xml`
-straight from `main`'s raw URLs, so a malformed template is live the moment it merges. On pushes
-it additionally builds and publishes the Docker image as `edge` and `main-<short-sha>`.
+`.github/workflows/ci.yml` runs the backend (typecheck + `node:test`), frontend (typecheck +
+Vitest + Vite build), Unraid/template validation, version policy, impact validation, and policy
+unit tests. Branch rules also require the governance status and one current non-author maintainer
+approval. The template check is not optional politeness: Community Applications serves
+`templates/*.xml` and `ca_profile.xml` straight from `main`'s raw URLs, so a malformed template
+is live the moment it merges. On pushes, CI additionally builds and publishes `edge` and
+`main-<short-sha>`.
 
 Image publishing is opt-in on ordinary `main` pushes: a fork without `DOCKERHUB_IMAGE` still gets
-green checks. A release tag is different—it fails before publishing if `DOCKERHUB_IMAGE`,
-`DOCKERHUB_USERNAME`, or `DOCKERHUB_TOKEN` is missing, rather than silently skipping the image and
-GitHub Release.
+green checks. A calculated release is different: the coordinator fails before tagging if
+`DOCKERHUB_IMAGE`, `DOCKERHUB_USERNAME`, or `DOCKERHUB_TOKEN` is missing, rather than silently
+skipping the image and GitHub Release.
 
 When `DOCKERHUB.md` changes on `main`, `.github/workflows/dockerhub-description.yml` publishes its
 installation-focused documentation as the Docker Hub repository overview using that same image
