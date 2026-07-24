@@ -435,9 +435,11 @@ green checks. A release tag is different—it fails before publishing if `DOCKER
 `DOCKERHUB_USERNAME`, or `DOCKERHUB_TOKEN` is missing, rather than silently skipping the image and
 GitHub Release.
 
-When `README.md` changes on `main`, `.github/workflows/dockerhub-description.yml` publishes it as
-the Docker Hub repository overview using that same image variable and credentials. The action is
-pinned to an immutable commit so an upstream tag cannot silently change what runs with the token.
+When `DOCKERHUB.md` changes on `main`, `.github/workflows/dockerhub-description.yml` publishes its
+installation-focused documentation as the Docker Hub repository overview using that same image
+variable and credentials. It stays below Docker Hub's 25 KB limit while linking back to this full
+README. The action is pinned to an immutable commit so an upstream tag cannot silently change what
+runs with the token. CI checks the size and rejects relative links that Docker Hub cannot resolve.
 
 ---
 

@@ -74,6 +74,7 @@ jobs:
       # from main's raw URLs. There is no publish step between a merge and what
       # users see, so a malformed template must fail here or not at all.
       - run: node scripts/validate-template.mjs
+      - run: node scripts/validate-dockerhub-readme.mjs
 
   impact:
     name: User-facing impact
