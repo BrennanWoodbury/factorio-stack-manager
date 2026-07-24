@@ -1,137 +1,203 @@
-name: Release
+name: Release merged change
 
-# Tag-driven. A merged release/vX.Y.Z PR creates its tag through
-# tag-merged-release.yml; a manually pushed recovery tag still works. Ordinary
-# merges never enter this workflow and only update edge.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Merge commit to reconcile (defaults to current main)
+        required: false
+        type: string
 
 permissions:
-  contents: write # to create the GitHub Release
+  contents: write
+  pull-requests: read
+
+# Tag calculation, tagging, and publication share one repository-wide lock.
+concurrency:
+  group: main-release-coordinator
+  cancel-in-progress: false
 
 jobs:
-  verify:
-    name: Verify the tag matches the tree
+  coordinate:
+    name: Recalculate, verify, and publish
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.commit_sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
+      - name: Re-fetch release state after acquiring the lock
+        run: git fetch --force --tags origin main:refs/remotes/origin/main
 
-      - id: v
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - id: pr
+        name: Find the merged pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.payload.inputs?.commit_sha || context.sha;
+            const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              ...context.repo,
+              commit_sha: sha,
+            });
+            const pull = pulls.find((p) => p.merged_at && p.base.ref === 'main' && p.merge_commit_sha === sha)
+              || pulls.find((p) => p.merged_at && p.base.ref === 'main');
+            core.setOutput('number', pull?.number || '');
+            core.setOutput('author', pull?.user.login || '');
+            core.setOutput('head_sha', pull?.head.sha || '');
+            core.info(pull ? `Commit ${sha} came from PR #${pull.number}` : `No merged PR found for ${sha}`);
 
-      - name: Publishing configuration is present
+      - id: policy
+        name: Recalculate version policy
+        continue-on-error: true
+        run: node scripts/version-policy.mjs --head HEAD --reconcile
+
+      - name: Report invalid main state
+        if: steps.policy.outcome == 'failure'
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          RELEASE_CLASS: ${{ steps.policy.outputs.release_class }}
+          VERSION: ${{ steps.policy.outputs.version }}
+          EXPECTED_MAJOR: ${{ steps.policy.outputs.expected_major }}
+        run: |
+          echo "::error title=Release policy blocked::Commit $COMMIT_SHA (PR #${PR_NUMBER:-unknown}) is invalid. Detected ${RELEASE_CLASS:-unknown}; predicted ${VERSION:-none}; expected MAJOR ${EXPECTED_MAJOR:-unknown}. No tag or image was published. Correct .version or migration metadata in a follow-up PR, then run reconciliation."
+          {
+            echo "## Release blocked"
+            echo ""
+            echo "- Commit: \`$COMMIT_SHA\`"
+            echo "- Pull request: \`#${PR_NUMBER:-unknown}\`"
+            echo "- Detected impact: \`${RELEASE_CLASS:-unknown}\`"
+            echo "- Predicted version: \`${VERSION:-none}\`"
+            echo "- Expected MAJOR: \`${EXPECTED_MAJOR:-unknown}\`"
+            echo "- Corrective action: fix \`.version\` or migration metadata in a reviewed PR, then use the reconciliation trigger."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Ignore a non-release merge
+        if: steps.policy.outputs.release == 'false'
+        run: echo "No shipped runtime or schema change; nothing to publish."
+
+      - name: Require a verified non-author maintainer approval
+        if: steps.policy.outputs.release == 'true'
+        uses: actions/github-script@v7
+        env:
+          PULL_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_AUTHOR: ${{ steps.pr.outputs.author }}
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        with:
+          script: |
+            if (!process.env.PULL_NUMBER) {
+              core.setFailed('release commits must be associated with a merged pull request');
+              return;
+            }
+            const fs = await import('node:fs');
+            const policy = await import(`${process.env.GITHUB_WORKSPACE}/scripts/governance-check.mjs`);
+            const maintainers = policy.parseMaintainers(fs.readFileSync('MAINTAINERS.md', 'utf8'));
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              ...context.repo,
+              pull_number: Number(process.env.PULL_NUMBER),
+            });
+            const approvals = policy.currentApprovers({
+              reviews,
+              trustedMaintainers: new Set(maintainers.keys()),
+              author: process.env.PR_AUTHOR,
+              headSha: process.env.PR_HEAD_SHA,
+            });
+            if (!approvals.length) core.setFailed('release needs a current approval from a verified non-author maintainer');
+            else core.info(`Release approved by: ${approvals.join(', ')}`);
+
+      - name: Check publishing configuration
+        if: steps.policy.outputs.release == 'true'
         env:
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          missing=()
-          for name in DOCKERHUB_IMAGE DOCKERHUB_USERNAME DOCKERHUB_TOKEN; do
-            [ -n "${!name}" ] || missing+=("$name")
-          done
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::release publishing is not configured: missing ${missing[*]}"
-            exit 1
+          test -n "$DOCKERHUB_IMAGE" || { echo "::error::missing DOCKERHUB_IMAGE"; exit 1; }
+          test -n "$DOCKERHUB_USERNAME" || { echo "::error::missing DOCKERHUB_USERNAME"; exit 1; }
+          test -n "$DOCKERHUB_TOKEN" || { echo "::error::missing DOCKERHUB_TOKEN"; exit 1; }
+
+      - name: Backend regression tests
+        if: steps.policy.outputs.release == 'true'
+        working-directory: backend
+        run: npm ci && npm run typecheck && npm test
+      - name: Frontend regression tests
+        if: steps.policy.outputs.release == 'true'
+        working-directory: frontend
+        run: npm ci && npm run typecheck && npm test && npm run build
+      - name: Validate Unraid template
+        if: steps.policy.outputs.release == 'true'
+        run: node scripts/validate-template.mjs
+
+      - name: Create the calculated annotated tag if needed
+        if: steps.policy.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.policy.outputs.tag }}
+          EXISTING: ${{ steps.policy.outputs.existing_tag }}
+        run: |
+          if [ "$EXISTING" = "true" ]; then
+            test "$(git rev-list -n 1 "$TAG")" = "$(git rev-parse HEAD)"
+            echo "$TAG already identifies this merge; continuing reconciliation"
+          else
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git tag -a "$TAG" HEAD -m "$TAG"
+            git push origin "$TAG"
           fi
 
-      - name: The tag commit is on main
-        run: |
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
-            || { echo "::error::release tag is not reachable from main"; exit 1; }
-
-      # A tag whose tree says a different version would publish images labelled
-      # with one number and reporting another. Fail before anything is pushed.
-      - name: Prepared release agrees with the tag
-        run: node scripts/verify-prepared-release.mjs "${{ steps.v.outputs.version }}"
-
-      - run: node scripts/validate-template.mjs
-
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '26'
-      - run: npm ci
-        working-directory: backend
-      - run: npm run typecheck && npm test
-        working-directory: backend
-      - run: npm ci
-        working-directory: frontend
-      - run: npm run typecheck && npm test && npm run build
-        working-directory: frontend
-
-  publish:
-    name: Publish image
-    needs: [verify, test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+        if: steps.policy.outputs.release == 'true'
       - uses: docker/login-action@v3
+        if: steps.policy.outputs.release == 'true'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - id: meta
+        if: steps.policy.outputs.release == 'true' && steps.policy.outputs.stale_reconciliation != 'true'
         uses: docker/metadata-action@v5
         with:
           images: ${{ vars.DOCKERHUB_IMAGE }}
-          # Full version plus the moving major/minor lines, so a user can pin as
-          # loosely or as tightly as they want. `latest` moves here and nowhere else.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,value=${{ steps.policy.outputs.tag }},pattern={{version}}
+            type=semver,value=${{ steps.policy.outputs.tag }},pattern={{major}}.{{minor}}
+            type=semver,value=${{ steps.policy.outputs.tag }},pattern={{major}}
             type=raw,value=latest
-
-      - uses: docker/build-push-action@v6
+      - id: stale_meta
+        if: steps.policy.outputs.release == 'true' && steps.policy.outputs.stale_reconciliation == 'true'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.DOCKERHUB_IMAGE }}
+          # An interrupted older release may be reconciled after a newer one, but
+          # only its immutable version alias is safe to publish at that point.
+          tags: type=raw,value=${{ steps.policy.outputs.version }}
+      - name: Publish Docker aliases
+        if: steps.policy.outputs.release == 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          build-args: |
-            APP_VERSION=${{ needs.verify.outputs.version }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          build-args: APP_VERSION=${{ steps.policy.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags || steps.stale_meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels || steps.stale_meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  github-release:
-    name: GitHub Release
-    needs: [verify, publish]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Extract this version's changelog section
+      - name: Create generated GitHub release notes if needed
+        if: steps.policy.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.policy.outputs.tag }}
+          PREVIOUS_TAG: ${{ steps.policy.outputs.previous_tag }}
         run: |
-          # Stop at the next version heading, or at the link definitions that
-          # close the file — the last release would otherwise carry them along.
-          awk -v v="${{ needs.verify.outputs.version }}" '
-            $0 ~ "^## \\["v"\\]" {found=1; next}
-            found && /^## \[/ {exit}
-            found && /^\[[^]]+\]: / {exit}
-            found {print}
-          ' CHANGELOG.md > release-notes.md
-          {
-            echo ""
-            echo "---"
-            echo ""
-            echo "**Unraid:** update the container to pick this up (the template tracks \`latest\`)."
-            echo "To pin or roll back, set the repository to \`${{ vars.DOCKERHUB_IMAGE }}:${{ needs.verify.outputs.version }}\`."
-          } >> release-notes.md
-      - uses: softprops/action-gh-release@v2
-        with:
-          body_path: release-notes.md
-          name: v${{ needs.verify.outputs.version }}
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists"
+          elif [ -n "$PREVIOUS_TAG" ]; then
+            gh release create "$TAG" --verify-tag --generate-notes --notes-start-tag "$PREVIOUS_TAG" --title "$TAG"
+          else
+            gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+          fi

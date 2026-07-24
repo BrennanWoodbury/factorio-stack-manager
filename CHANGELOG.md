@@ -1,8 +1,8 @@
 # Changelog
 
-Notable changes per release. This file is the source for the GitHub Release body and
-for the Unraid template's `<Changes>` block, so keep entries written for users rather
-than for the commit log.
+Optional curated history for notable changes. GitHub generates release notes from the
+pull requests merged between tags, and the Unraid template links to those releases, so
+this file is not a publication prerequisite.
 
 Versioning is [semantic](https://semver.org/): the **major** covers anything a user has
 to act on — a renamed environment variable, a changed data-dir layout, a template field
@@ -13,9 +13,9 @@ path in the release notes and are never shipped in a minor or patch.
 
 ### Release process
 
-- Merging a reviewed `release/vX.Y.Z` pull request now validates and tags that exact
-  merge automatically, then publishes the Docker and GitHub releases. Ordinary merges
-  still publish only `edge` and do not create versions or move `latest`.
+- Reviewed runtime changes now produce patch releases on merge, additive migrations
+  produce minor releases, and manual one-step MAJOR changes produce major releases.
+  Documentation, tests, CI, and maintainer tooling alone produce no release.
 
 ## [1.0.0] - 2026-07-24
 

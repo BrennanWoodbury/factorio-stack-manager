@@ -2,7 +2,8 @@
 
 ## How releases reach you
 
-Releases are cut deliberately, by tagging. Merging to `main` does **not** reach users:
+Runtime and schema changes release automatically after their reviewed pull request
+merges to `main`. Documentation, tests, CI, and maintainer tooling do not release:
 
 | Tag on Docker Hub | Moves when | Use it if |
 | --- | --- | --- |
@@ -26,8 +27,9 @@ applying any migration, the manager writes a consistent copy to
 the snapshot can't be written it refuses to migrate rather than proceeding unprotected
 (override with `SKIP_DB_BACKUP=true`, accepting that the upgrade won't be reversible).
 
-Read the [release notes](CHANGELOG.md) before a **major** version. Those are the only
-releases allowed to require anything of you, and the steps will be written there.
+Read the [GitHub release notes](https://github.com/BrennanWoodbury/factorio-tools-manager/releases)
+before a **major** version. Those are the only releases allowed to require anything
+of you, and the steps will be written there.
 
 ## Rolling back
 
@@ -80,14 +82,16 @@ These are treated as a public contract. Changing any of them incompatibly requir
 - **Anything requiring manual action after an update.**
 
 Most of that list is checked mechanically on every pull request rather than left to
-memory — see the impact check in the [README](README.md#the-impact-check). A change that
-trips it can't merge until `.version` is bumped to match.
+memory. The Version policy check reports the responsible files and rules, the release
+class, and the predicted version. A breaking change cannot merge until `MAJOR` in
+`.version` is increased exactly once.
 
 Deliberately *not* covered: the HTTP API. The SPA ships in the same image as the backend
 it talks to, so the two are always in step and the API is internal.
 
-Migrations are additive wherever possible, and each one declares whether an older build
-can still read the database afterwards (`backwardCompatible`). Additive ones are a minor
-at most — they cost a user nothing, including the ability to roll back. A migration that
-renames, removes or rewrites what an older build reads is a major on its own, is flagged
-by the impact check, and the release notes say so explicitly.
+Migrations are additive wherever possible, append the next numeric migration, and each
+one declares whether an older build can still read the database afterwards
+(`backwardCompatible`). Additive ones are a minor release — they cost a user nothing,
+including the ability to roll back. A migration that renames, removes or rewrites what
+an older build reads is a major on its own, is flagged by the version policy, and the
+release notes say so explicitly.
