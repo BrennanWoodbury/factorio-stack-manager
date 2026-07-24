@@ -18,6 +18,14 @@ data paths, port defaults, migrations, and anything requiring manual action. -->
 - Existing installs:
 - Rollback:
 
+## Why do?
+
+<!-- Why is this change needed? Describe the problem, constraint, or opportunity. -->
+
+## What do?
+
+<!-- What does this change do to address it? Call out the approach and important boundaries. -->
+
 ## Database
 
 <!-- Check one. For a new migration, name it and confirm its declared
