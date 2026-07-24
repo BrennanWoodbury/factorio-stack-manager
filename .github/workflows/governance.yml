@@ -1,0 +1,78 @@
+name: Governance approval
+
+# pull_request_target and pull_request_review load this workflow from the protected base branch.
+# Candidate files are fetched as inert data through the API; pull-request code is never checked out
+# or executed with the write-capable token.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    branches: [main]
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: governance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  approval:
+    name: Current maintainer approval
+    if: github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark the head as pending
+        uses: actions/github-script@v7
+        env:
+          STATUS_CONTEXT: governance/maintainer-approval
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: 'pending',
+              context: process.env.STATUS_CONTEXT,
+              description: 'Checking maintainer governance policy',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Check out trusted base revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Evaluate policy and publish head status
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          STATUS_CONTEXT: governance/maintainer-approval
+        with:
+          script: |
+            const sha = context.payload.pull_request.head.sha;
+            const target_url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let state = 'error';
+            let description = 'Governance check could not complete';
+            try {
+              const { checkPullRequest } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/governance-check.mjs`);
+              const result = await checkPullRequest({ github, context, core });
+              state = result.ok ? 'success' : 'failure';
+              description = result.description;
+            } catch (error) {
+              description = error instanceof Error ? error.message : String(error);
+            } finally {
+              await github.rest.repos.createCommitStatus({
+                ...context.repo,
+                sha,
+                state,
+                context: process.env.STATUS_CONTEXT,
+                description: description.slice(0, 140),
+                target_url,
+              });
+            }
+            if (state !== 'success') core.setFailed(description);

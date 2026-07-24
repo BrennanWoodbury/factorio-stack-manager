@@ -12,6 +12,7 @@ routing is done entirely by DNS **SRV records**.
 
 Already running it? [UPGRADING.md](UPGRADING.md) covers which image tag to track, how to roll
 back, and what will and won't change under you. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+Project stewardship and review requirements are documented in [MAINTAINERS.md](MAINTAINERS.md).
 
 ---
 
