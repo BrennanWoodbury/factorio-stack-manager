@@ -11,6 +11,8 @@ path in the release notes and are never shipped in a minor or patch.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-24
+
 First tagged release. Everything before this shipped continuously from `main`; from
 here on, `latest` only moves when a version is tagged.
 
@@ -56,4 +58,5 @@ here on, `latest` only moves when a version is tagged.
   rolling back across the additive ones — nearly all of them — just works. The manager
   refuses to start only when a release made a genuinely one-way change.
 
-[Unreleased]: https://github.com/BrennanWoodbury/factorio-tools-manager/commits/main
+[Unreleased]: https://github.com/BrennanWoodbury/factorio-tools-manager/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/BrennanWoodbury/factorio-tools-manager/releases/tag/v1.0.0
