@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - README.md
+      - DOCKERHUB.md
       - .github/workflows/dockerhub-description.yml
   workflow_dispatch:
 
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   sync:
-    name: Publish README to Docker Hub
+    name: Publish Docker Hub overview
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,4 +23,4 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ vars.DOCKERHUB_IMAGE }}
-          readme-filepath: README.md
+          readme-filepath: DOCKERHUB.md

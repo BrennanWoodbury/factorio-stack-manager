@@ -45,7 +45,7 @@ here on, `latest` only moves when a version is tagged.
   moves a user-facing surface without a matching version bump.
 - Release files are prepared on a branch and reviewed through the normal pull-request
   protections before the merged `main` commit is tagged; releases need no admin bypass.
-- Changes to `README.md` on `main` automatically update the Docker Hub overview.
+- Changes to the curated `DOCKERHUB.md` on `main` automatically update the Docker Hub overview.
 
 ### Safety
 
