@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * Cut a release: `node scripts/release.mjs 1.2.3`
+ * Cut a release: `node scripts/release.mjs`
+ *
+ * The version is resolved, not typed: MAJOR.MINOR comes from `.version` (human,
+ * reviewed in the PR that needed the bump) and PATCH from the existing tags for
+ * that line. Pass an explicit version only to override.
  *
  * Everything a release touches lives in the repository, so this does the edits and
  * leaves you with a commit and a tag to push. Nothing is published until the tag
@@ -18,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readLine, highestPatch } from './next-version.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATE = path.join(root, 'templates/factorio-tools-manager.xml');
@@ -26,7 +31,7 @@ const REPO_URL = 'https://github.com/BrennanWoodbury/factorio-tools-manager';
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
-const version = args.find((a) => !a.startsWith('--'));
+const override = args.find((a) => !a.startsWith('--'));
 
 const die = (msg) => {
   console.error(`✗ ${msg}`);
@@ -34,16 +39,18 @@ const die = (msg) => {
 };
 const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim();
 
-if (!version) die('usage: node scripts/release.mjs <version> [--dry-run]');
+const tags = git('tag', '--list').split('\n').map((t) => t.trim()).filter(Boolean);
+const { major, minor } = readLine();
+const version = override ?? `${major}.${minor}.${highestPatch(major, minor, tags) + 1}`;
 if (!/^\d+\.\d+\.\d+$/.test(version)) die(`version must be MAJOR.MINOR.PATCH, got "${version}"`);
+console.log(`Releasing v${version}${override ? ' (overridden)' : ` (.version says ${major}.${minor})`}`);
 
 // ---- Preconditions --------------------------------------------------------
 if (!dryRun) {
   if (git('status', '--porcelain')) die('working tree is dirty — commit or stash first');
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
   if (branch !== 'main') die(`releases are cut from main, currently on "${branch}"`);
-  const tags = git('tag', '--list', `v${version}`);
-  if (tags) die(`tag v${version} already exists`);
+  if (tags.includes(`v${version}`)) die(`tag v${version} already exists`);
 }
 
 const today = new Date().toISOString().slice(0, 10);
