@@ -39,6 +39,8 @@ function parseRange(name: string, fallback: string): [number, number] {
 }
 
 export const config = {
+  /** Build identity, stamped into the image by CI from the release tag. */
+  appVersion: opt('APP_VERSION', 'dev'),
   port: intOpt('PORT', 8080),
   dataDir: path.resolve(opt('DATA_DIR', path.resolve(process.cwd(), '../data'))),
   dbPath: opt('DB_PATH', path.resolve(opt('DATA_DIR', path.resolve(process.cwd(), '../data')), 'manager.db')),

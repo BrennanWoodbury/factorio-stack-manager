@@ -49,11 +49,46 @@ jobs:
       - run: npm run build
         working-directory: frontend
 
+  template:
+    name: Unraid template — validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      # Community Applications reads templates/*.xml and ca_profile.xml straight
+      # from main's raw URLs. There is no publish step between a merge and what
+      # users see, so a malformed template must fail here or not at all.
+      - run: node scripts/validate-template.mjs
+
+  impact:
+    name: User-facing impact
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needs the base ref to diff against
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      # Fails when a change touches something users depend on (a one-way migration,
+      # a removed Unraid Config target, a renamed env var, a changed port default)
+      # without .version being bumped to match. Set IMPACT_OVERRIDE=true on a re-run
+      # if a finding is a false positive — and say why in the PR.
+      - run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          node scripts/impact-check.mjs "origin/${{ github.base_ref }}"
+
   image:
-    name: Build & push image
-    needs: [backend, frontend]
-    # Only publish from main, and only once the Docker Hub target is configured
-    # (repository variable DOCKERHUB_IMAGE, e.g. "youruser/factorio-tools-manager").
+    name: Build & push edge image
+    needs: [backend, frontend, template]
+    # Pushes to main publish `edge` only. `latest` moves solely on a release tag
+    # (release.yml), so merging can no longer reach the users tracking `latest`
+    # through the Unraid template.
+    # Gated on the Docker Hub target being configured (repository variable
+    # DOCKERHUB_IMAGE, e.g. "youruser/factorio-tools-manager") so a fork stays green.
     if: github.event_name == 'push' && vars.DOCKERHUB_IMAGE != ''
     runs-on: ubuntu-latest
     steps:
@@ -68,12 +103,14 @@ jobs:
         with:
           images: ${{ vars.DOCKERHUB_IMAGE }}
           tags: |
-            type=raw,value=latest
-            type=sha,format=short
+            type=raw,value=edge
+            type=sha,format=short,prefix=main-
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+          build-args: |
+            APP_VERSION=edge-${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

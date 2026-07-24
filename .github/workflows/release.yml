@@ -1,0 +1,138 @@
+name: Release
+
+# Tag-driven. Pushing `vX.Y.Z` is the only thing that moves `latest`, which is what
+# the Unraid template tracks — so merging to main never reaches users on its own.
+# Cut one with `node scripts/release.mjs` (the number comes from .version plus the
+# existing tags), then push --follow-tags.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # to create the GitHub Release
+
+jobs:
+  verify:
+    name: Verify the tag matches the tree
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # A tag whose tree says a different version would publish images labelled
+      # with one number and reporting another. Fail before anything is pushed.
+      - name: package.json versions agree with the tag
+        run: |
+          version="${{ steps.v.outputs.version }}"
+          for f in backend/package.json frontend/package.json; do
+            found=$(node -p "require('./$f').version")
+            if [ "$found" != "$version" ]; then
+              echo "::error::$f is $found but the tag is v$version — run scripts/release.mjs"
+              exit 1
+            fi
+          done
+
+      # The tag must sit on the release line .version declares. Catches a tag typed
+      # by hand, or a MAJOR/MINOR bump that was merged but never released from.
+      - name: The tag is on the line .version declares
+        run: |
+          line=$(node scripts/next-version.mjs --line)
+          case "${{ steps.v.outputs.version }}" in
+            "$line".*) ;;
+            *) echo "::error::tag v${{ steps.v.outputs.version }} is not on line $line (.version)"; exit 1 ;;
+          esac
+
+      - name: CHANGELOG has an entry for this version
+        run: |
+          grep -q "^## \[${{ steps.v.outputs.version }}\]" CHANGELOG.md \
+            || { echo "::error::no CHANGELOG.md section for ${{ steps.v.outputs.version }}"; exit 1; }
+
+      - run: node scripts/validate-template.mjs
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - run: npm ci
+        working-directory: backend
+      - run: npm run typecheck && npm test
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run typecheck && npm test && npm run build
+        working-directory: frontend
+
+  publish:
+    name: Publish image
+    needs: [verify, test]
+    if: vars.DOCKERHUB_IMAGE != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.DOCKERHUB_IMAGE }}
+          # Full version plus the moving major/minor lines, so a user can pin as
+          # loosely or as tightly as they want. `latest` moves here and nowhere else.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            APP_VERSION=${{ needs.verify.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  github-release:
+    name: GitHub Release
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract this version's changelog section
+        run: |
+          # Stop at the next version heading, or at the link definitions that
+          # close the file — the last release would otherwise carry them along.
+          awk -v v="${{ needs.verify.outputs.version }}" '
+            $0 ~ "^## \\["v"\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found && /^\[[^]]+\]: / {exit}
+            found {print}
+          ' CHANGELOG.md > release-notes.md
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Unraid:** update the container to pick this up (the template tracks \`latest\`)."
+            echo "To pin or roll back, set the repository to \`${{ vars.DOCKERHUB_IMAGE }}:${{ needs.verify.outputs.version }}\`."
+          } >> release-notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          name: v${{ needs.verify.outputs.version }}

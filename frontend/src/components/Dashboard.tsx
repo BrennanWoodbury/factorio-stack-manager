@@ -208,6 +208,14 @@ function SystemPanel({ system }: { system: SystemStatus }) {
           </div>
           <div className="l">DNS automation</div>
         </div>
+        {system.version && (
+          <div className="stat" title="Include this in any bug report">
+            <div className="n mono" style={{ fontSize: 15 }}>
+              {system.version}
+            </div>
+            <div className="l">Version</div>
+          </div>
+        )}
         {system.dns.enabled && (
           <div className="stat">
             <div className="n mono" style={{ fontSize: 15 }}>

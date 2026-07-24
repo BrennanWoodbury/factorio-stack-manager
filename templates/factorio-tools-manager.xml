@@ -97,8 +97,8 @@ Cloudflare DNS is optional and configured inside the app.
           Type="Variable" Display="advanced" Required="false" Mask="false">27015-27115</Config>
 
   <Config Name="Data Dir" Target="DATA_DIR" Default="/data" Mode=""
-          Description="Where the data lives inside the container. Must match the container side of the Appdata mount above."
-          Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
+          Description="Where the data lives inside the container. Must match the container side of the Appdata mount above — change both or neither."
+          Type="Variable" Display="advanced" Required="false" Mask="false">/data</Config>
 
   <Config Name="Session Secret" Target="JWT_SECRET" Default="" Mode=""
           Description="Signs the login session cookie. Leave blank to derive one, or set your own (openssl rand -hex 32). Changing it logs everyone out."

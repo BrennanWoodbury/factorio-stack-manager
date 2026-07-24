@@ -95,6 +95,9 @@ export type BindParam = SqlValue | Record<string, SqlValue>;
  * between the API and background jobs.
  */
 export function openDb(filename: string): DB {
+  // A database that doesn't exist yet has nothing worth preserving, and a first
+  // run would otherwise leave a snapshot of an empty file behind.
+  const isNew = filename === ':memory:' || !fs.existsSync(filename);
   if (filename !== ':memory:') {
     fs.mkdirSync(path.dirname(filename), { recursive: true });
   }
@@ -102,8 +105,62 @@ export function openDb(filename: string): DB {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA_SQL);
-  runMigrations(db);
+  runMigrations(db, {
+    onBeforeMigrate: isNew ? undefined : (from) => snapshotBeforeMigrate(db, filename, from),
+  });
   return db;
+}
+
+/** How many pre-migration snapshots to keep before pruning the oldest. */
+const KEEP_DB_SNAPSHOTS = 5;
+
+/**
+ * Snapshot the database immediately before its first migration in this run.
+ *
+ * `VACUUM INTO` rather than a file copy: the database is in WAL mode, so the
+ * .db file on its own is not a complete or consistent picture. This is what
+ * makes an upgrade reversible — restore the snapshot and the old image starts
+ * cleanly instead of hitting SchemaTooNewError with nowhere to go.
+ *
+ * A failed snapshot aborts startup rather than migrating unprotected; set
+ * SKIP_DB_BACKUP=true to override (and accept a one-way upgrade).
+ */
+function snapshotBeforeMigrate(db: DB, filename: string, fromVersion: number): void {
+  if (filename === ':memory:') return;
+  if (process.env.SKIP_DB_BACKUP === 'true') {
+    console.warn('[db] SKIP_DB_BACKUP=true — migrating without a snapshot');
+    return;
+  }
+
+  const dir = path.join(path.dirname(filename), 'db-backups');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const target = path.join(dir, `manager-v${fromVersion}-${stamp}.db`);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    // VACUUM INTO refuses to overwrite, and the timestamp makes collisions moot.
+    db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
+    console.log(`[db] snapshot before migrating from v${fromVersion}: ${target}`);
+  } catch (err) {
+    throw new Error(
+      `Could not snapshot the database before migrating (${(err as Error).message}). ` +
+        'Refusing to migrate without a backup — free up disk space, or set SKIP_DB_BACKUP=true ' +
+        'to proceed anyway (the upgrade will not be reversible).',
+    );
+  }
+
+  // Keep the most recent few; these are small but they do accumulate.
+  try {
+    // By mtime, not name: "manager-v9-…" sorts after "manager-v14-…" lexically.
+    const stale = fs
+      .readdirSync(dir)
+      .filter((f) => f.startsWith('manager-v') && f.endsWith('.db'))
+      .map((f) => ({ f, at: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => a.at - b.at)
+      .slice(0, -KEEP_DB_SNAPSHOTS);
+    for (const { f } of stale) fs.rmSync(path.join(dir, f), { force: true });
+  } catch {
+    /* pruning is best-effort */
+  }
 }
 
 export function kvGet(db: DB, key: string): string | undefined {

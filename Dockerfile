@@ -20,6 +20,10 @@ RUN npm run build
 
 # --- Runtime ---
 FROM node:26-bookworm-slim AS runtime
+# Stamped by CI from the release tag; shown in the UI and /api/system/status so a
+# bug report can name a build. Defaults to "dev" for a plain local build.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 ENV NODE_ENV=production
 WORKDIR /app/backend
 COPY backend/package*.json ./

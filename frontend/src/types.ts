@@ -213,6 +213,8 @@ export interface DnsSettings {
 }
 
 export interface SystemStatus {
+  /** Build identity of the running manager ("dev" for a local build). */
+  version?: string;
   docker: { ok: boolean; error?: string };
   dns: { enabled: boolean; baseDomain: string | null; hostRecord: string | null };
   ddns: {
