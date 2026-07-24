@@ -43,6 +43,9 @@ here on, `latest` only moves when a version is tagged.
 - Versions come from `.version` (the human-controlled MAJOR.MINOR line) plus the
   existing git tags (the derived patch), and a CI impact check refuses a change that
   moves a user-facing surface without a matching version bump.
+- Release files are prepared on a branch and reviewed through the normal pull-request
+  protections before the merged `main` commit is tagged; releases need no admin bypass.
+- Changes to `README.md` on `main` automatically update the Docker Hub overview.
 
 ### Safety
 
