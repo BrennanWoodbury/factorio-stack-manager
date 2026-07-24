@@ -356,25 +356,29 @@ viewer's tests stub it and drive `ended` / `error` by hand. That makes reconnect
 
 ### Releases
 
-Releases are tag-driven, so merging to `main` never reaches users: `main` publishes only
-`edge`, and `latest` — which the Unraid template tracks — moves solely on a version tag.
+Releases are tag-driven. Ordinary merges to `main` publish only `edge`; merging a reviewed
+`release/vX.Y.Z` PR deliberately creates its version tag. `latest` — which the Unraid template
+tracks — moves solely when that tagged release passes publication.
 
 ```bash
 # Edit CHANGELOG.md under [Unreleased], update local main, then:
 node scripts/release.mjs            # creates release/vX.Y.Z and commits the release files
-git push -u origin release/vX.Y.Z   # open, review, and merge this release PR
-
-# Back on updated main after the PR merges:
-node scripts/release.mjs            # recognizes the prepared release and tags this commit
-git push origin vX.Y.Z              # publishes the image and GitHub Release
+git push -u origin release/vX.Y.Z   # open, review, and merge this release PR;
+                                    # GitHub tags and publishes the merge automatically
 ```
 
-The command fetches tags before resolving the patch and refuses to prepare or tag unless
-local `main` is exactly `origin/main`. The version cannot be supplied by hand. Splitting
-preparation from tagging keeps the release changes inside the normal reviewed-PR path;
-protected `main` needs no release bypass.
+The command fetches tags before resolving the patch and refuses to prepare unless local
+`main` is exactly `origin/main`. The version cannot be supplied by hand. After the release PR
+passes the normal checks and approval, `.github/workflows/tag-merged-release.yml` validates the
+merged tree, creates the tag on that exact reviewed commit, and starts publication. The tag step
+is idempotent so a failed dispatch can be rerun safely; protected `main` needs no release bypass.
 
-The tag triggers `.github/workflows/release.yml`, which re-checks that the tree agrees
+An ordinary merge is **not** a release. It may update `edge` and `main-<short-sha>`, but it does
+not create a version tag or move `latest`. Internal work such as CI or documentation normally
+leaves `.version` unchanged. That file moves only when a user-facing change requires a new major
+or minor line; patches are derived from release tags when a release is deliberately prepared.
+
+The tag dispatches `.github/workflows/release.yml`, which re-checks that the tree agrees
 with the tag, runs the tests, publishes `1.2.3` / `1.2` / `1` / `latest` (stamping
 `APP_VERSION` into the image), and opens a GitHub Release from the changelog section.
 

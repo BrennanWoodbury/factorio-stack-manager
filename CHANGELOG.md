@@ -11,6 +11,12 @@ path in the release notes and are never shipped in a minor or patch.
 
 ## [Unreleased]
 
+### Release process
+
+- Merging a reviewed `release/vX.Y.Z` pull request now validates and tags that exact
+  merge automatically, then publishes the Docker and GitHub releases. Ordinary merges
+  still publish only `edge` and do not create versions or move `latest`.
+
 ## [1.0.0] - 2026-07-24
 
 First tagged release. Everything before this shipped continuously from `main`; from
