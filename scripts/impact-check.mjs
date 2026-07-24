@@ -207,7 +207,7 @@ if (worst === 'none') {
 // An override exists because these rules cannot know intent — a removed env var
 // that was never released, for instance.
 if (process.env.IMPACT_OVERRIDE === 'true') {
-  console.log('! IMPACT_OVERRIDE=true — accepted without a version bump');
+  console.log('! impact-reviewed label present — accepted without a version bump');
   process.exit(0);
 }
 
@@ -215,14 +215,14 @@ if (worst === 'major' && !bumpedMajor) {
   console.error(
     `✗ this needs MAJOR bumped in .version (currently ${lineAfter.major}.${lineAfter.minor}),\n` +
       '  and the upgrade path written into UPGRADING.md / the [Unreleased] changelog section.\n' +
-      '  If a listed item is not really breaking, set IMPACT_OVERRIDE=true and say why in the PR.',
+      '  If a listed item is not really breaking, explain why in the PR and ask a maintainer to apply impact-reviewed.',
   );
   process.exit(1);
 }
 if (worst === 'minor' && !bumped) {
   console.error(
     `✗ this needs at least MINOR bumped in .version (currently ${lineAfter.major}.${lineAfter.minor}).\n` +
-      '  If it is genuinely a patch, set IMPACT_OVERRIDE=true and say why in the PR.',
+      '  If it is genuinely a patch, explain why in the PR and ask a maintainer to apply impact-reviewed.',
   );
   process.exit(1);
 }

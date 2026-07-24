@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # Re-run the impact decision when a maintainer applies or removes the
+    # auditable false-positive override.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # A newer push to the same ref supersedes an in-flight run.
 concurrency:
@@ -75,9 +78,11 @@ jobs:
           node-version: '26'
       # Fails when a change touches something users depend on (a one-way migration,
       # a removed Unraid Config target, a renamed env var, a changed port default)
-      # without .version being bumped to match. Set IMPACT_OVERRIDE=true on a re-run
-      # if a finding is a false positive — and say why in the PR.
-      - run: |
+      # without .version being bumped to match. A maintainer can apply the
+      # impact-reviewed label for a false positive; the PR must explain why.
+      - env:
+          IMPACT_OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'impact-reviewed') }}
+        run: |
           git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
           node scripts/impact-check.mjs "origin/${{ github.base_ref }}"
 
