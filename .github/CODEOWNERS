@@ -1,0 +1,6 @@
+# Keep every rule synchronized with the roster in /MAINTAINERS.md.
+* @BrennanWoodbury @OccamsChainsaw42
+
+# Governance files are explicit so later, more-specific rules cannot weaken their ownership.
+/MAINTAINERS.md @BrennanWoodbury @OccamsChainsaw42
+/.github/CODEOWNERS @BrennanWoodbury @OccamsChainsaw42
