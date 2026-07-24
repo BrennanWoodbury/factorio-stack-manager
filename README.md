@@ -405,7 +405,9 @@ surface moved without `.version` moving to match:
 These read what actually changed rather than which files were touched. That distinction
 is the whole point: a file-level trigger would fire on 13 of this repo's 14 migrations,
 every one a harmless `ADD COLUMN`, and a check that cries wolf that often gets ignored.
-Set `IMPACT_OVERRIDE=true` to accept a false positive, and say why in the pull request.
+For a false positive, explain why in the pull request and ask a maintainer to apply the
+`impact-reviewed` label. Applying or removing the label reruns the check, and leaves the
+exception visible in the pull request history.
 
 See [UPGRADING.md](UPGRADING.md) for the tag policy, rollback procedure, and what counts
 as a breaking change.

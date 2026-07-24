@@ -5,7 +5,7 @@
 ## Release impact
 
 <!-- Keep one: Patch / Minor / Major. Explain the choice, including why any
-impact-check finding is a false positive if an override is requested. -->
+impact-check finding is a false positive if the impact-reviewed label is requested. -->
 
 **Impact:** Patch / Minor / Major
 
