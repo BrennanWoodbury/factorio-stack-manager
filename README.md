@@ -123,6 +123,10 @@ The Factorio servers it creates appear in Unraid's Docker tab without templates 
 that's expected; manage them from this app. They also survive a manager update, and are left
 running if you remove the manager (`STOP_SERVERS_ON_SHUTDOWN` changes that).
 
+For Unraid-specific installation or runtime help, use the
+[Unraid support form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml).
+It applies the `unraid` label automatically so reports remain searchable in this repository.
+
 > **Data location.** Persistent data (SQLite DB + per-server saves/mods/config) is stored at
 > `/opt/factorio-tools-manager`. Override with `FTM_DATA_DIR` (e.g.
 > `FTM_DATA_DIR=$HOME/.factorio-tools-manager`).

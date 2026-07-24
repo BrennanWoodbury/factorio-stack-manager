@@ -30,6 +30,8 @@ here on, `latest` only moves when a version is tagged.
   Docker network and host-path setup.
 - The running version is shown on the dashboard and returned by
   `GET /api/system/status`.
+- Unraid support reports use a structured GitHub issue form and an `unraid` label,
+  keeping installation help and application development in one repository.
 
 ### Changed
 

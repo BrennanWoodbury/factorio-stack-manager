@@ -1,0 +1,97 @@
+name: Unraid support
+description: Get help installing or running Factorio Tools Manager on Unraid
+title: "[Unraid]: "
+labels:
+  - unraid
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an Unraid problem. Search the existing Unraid issues first, and never include passwords, API tokens, session secrets, or other credentials.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: What needs help?
+      options:
+        - Installing the template
+        - Updating or rolling back
+        - Starting the manager container
+        - Creating or controlling Factorio server containers
+        - Ports or remote player connections
+        - Cloudflare DNS or DDNS
+        - Storage, permissions, saves, or backups
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: unraid-version
+    attributes:
+      label: Unraid version
+      placeholder: "For example: 7.1.4"
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Manager version or image tag
+      description: The dashboard shows the running version. If unavailable, provide the Repository value from the Unraid container editor.
+      placeholder: "For example: 1.0.0, latest, or edge"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Community Applications
+        - Raw template URL
+        - Template XML copied to templates-user
+        - Existing container edited by hand
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include what you expected, what happened instead, and any visible error message.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Change ...
+        3. Click ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: container-config
+    attributes:
+      label: Relevant container configuration
+      description: Include changed paths, ports, variables, and network mode. Remove passwords, tokens, and secrets.
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste the smallest manager or Factorio-container log excerpt that shows the problem. Remove credentials and public IP addresses if desired.
+      render: shell
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I searched existing issues and removed passwords, API tokens, session secrets, and other credentials from this report.
+          required: true

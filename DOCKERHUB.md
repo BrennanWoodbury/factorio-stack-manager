@@ -94,6 +94,10 @@ https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/te
 In Unraid, set **Admin Password** and make **Game Port Range** match the UDP range
 forwarded on your router. The remaining fields have usable defaults.
 
+For Unraid-specific help, open the
+[Unraid support form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml).
+Reports are tracked in this project with the `unraid` label.
+
 ## Image tags
 
 | Tag | Meaning |

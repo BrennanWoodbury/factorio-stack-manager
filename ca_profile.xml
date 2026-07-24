@@ -13,7 +13,8 @@ It can also give every server its own subdomain with no port number to type, usi
 Cloudflare DNS SRV records and a built-in DDNS job — optional, and configured in the
 app rather than in the container template.
 
-Issues and questions: https://github.com/BrennanWoodbury/factorio-tools-manager/issues
+Unraid support: https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml
+Existing Unraid issues: https://github.com/BrennanWoodbury/factorio-tools-manager/issues?q=is%3Aissue%20label%3Aunraid
   </Profile>
   <Icon>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/icon.png</Icon>
   <WebPage>https://github.com/BrennanWoodbury/factorio-tools-manager</WebPage>
