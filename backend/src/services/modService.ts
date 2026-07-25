@@ -554,6 +554,39 @@ export class ModService {
     return out;
   }
 
+  /**
+   * Enabled mods with no zip on disk, in list order. Bundled mods never count —
+   * they ship in the image and are not portal downloads.
+   */
+  missingMods(serverId: string, entries: ModEntry[] = this.getModList(serverId)): string[] {
+    const installed = new Set(this.installedMods(serverId).map((m) => m.name));
+    return entries
+      .filter((e) => e.enabled && !BUNDLED_MODS.has(e.name) && !installed.has(e.name))
+      .map((e) => e.name);
+  }
+
+  /**
+   * Download whatever a server has enabled but doesn't have on disk.
+   *
+   * This is what makes a mod list self-healing: applying a pack writes the list
+   * before the downloads run, so any failure used to leave the list enabled with
+   * no zips and no way back except a manual re-save. Returns the failures rather
+   * than throwing, so the caller can report every one instead of the first.
+   */
+  async downloadMissing(server: ServerRow): Promise<{ name: string; error: string }[]> {
+    const failures: { name: string; error: string }[] = [];
+    const entries = this.getModList(server.id);
+    const byName = new Map(entries.map((e) => [e.name, e]));
+    for (const name of this.missingMods(server.id, entries)) {
+      try {
+        await this.downloadMod(server, name, byName.get(name)?.version);
+      } catch (err) {
+        failures.push({ name, error: (err as Error).message });
+      }
+    }
+    return failures;
+  }
+
   getModList(serverId: string): ModEntry[] {
     return serverFiles.readModList(serverId);
   }

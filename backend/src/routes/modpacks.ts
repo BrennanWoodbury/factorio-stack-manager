@@ -92,6 +92,15 @@ export function modpacksRouter(ctx: AppContext): Router {
     }),
   );
 
+  r.get(
+    '/:id/plan',
+    asyncHandler(async (req, res) => {
+      const serverId = String(req.query.serverId ?? '');
+      if (!serverId) throw new ValidationError('serverId is required');
+      res.json(modpacks.plan(req.params.id, serverId));
+    }),
+  );
+
   r.post(
     '/:id/apply',
     asyncHandler(async (req, res) => {

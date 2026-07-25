@@ -974,6 +974,17 @@ export class ServerManager {
     // Enforce the game mode's bundled-mod enablement in the mod list, preserving any
     // other mods. Modded leaves the mod list to the applied modpack.
     await this.applyGameModeMods(row);
+    // Fetch anything enabled but not on disk. A mod list is written before its
+    // downloads run, so a failure part-way leaves mods enabled with no zips —
+    // recoverable only by re-saving the list by hand. Healing here makes the
+    // download happen when it is actually needed.
+    const failed = await this.mods.downloadMissing(row);
+    if (failed.length > 0) {
+      throw new ValidationError(
+        `Could not download ${failed.length} mod(s) this server needs:\n` +
+          failed.map((f) => `  • ${f.name}: ${f.error}`).join('\n'),
+      );
+    }
     // Refuse a mod set the game will reject. Without this the container exits(1)
     // ~7ms in and `unless-stopped` restarts it forever, with the only explanation
     // buried in the container log — and on a server with no save yet the failure
