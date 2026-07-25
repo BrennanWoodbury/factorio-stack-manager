@@ -1,4 +1,4 @@
-# Factorio Multi-Server Manager
+# Factorio Stack Manager
 
 > **This project is moving.** Future updates publish to
 > [`brennanwoodbury/factorio-stack-manager`](https://hub.docker.com/r/brennanwoodbury/factorio-stack-manager)

@@ -155,8 +155,8 @@ async function main() {
   app.use(errorHandler);
 
   const server = app.listen(config.port, () => {
-    console.log(`[factorio-manager] listening on :${config.port}`);
-    console.log(`[factorio-manager] DNS ${ctx.dns.enabled ? 'enabled' : 'disabled'}, ` +
+    console.log(`[factorio-stack-manager] listening on :${config.port}`);
+    console.log(`[factorio-stack-manager] DNS ${ctx.dns.enabled ? 'enabled' : 'disabled'}, ` +
       `game ports ${config.gamePortRange.join('-')}, rcon ${config.rconPortRange.join('-')}`);
   });
 
@@ -172,7 +172,7 @@ async function main() {
   const shutdown = async () => {
     if (shuttingDown) return; // ignore repeated signals while stopping
     shuttingDown = true;
-    console.log('[factorio-manager] shutting down');
+    console.log('[factorio-stack-manager] shutting down');
     ctx.ddns.stop();
     ctx.backups.stop();
     if (config.stopServersOnShutdown) {
@@ -193,6 +193,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[factorio-manager] fatal:', err);
+  console.error('[factorio-stack-manager] fatal:', err);
   process.exit(1);
 });

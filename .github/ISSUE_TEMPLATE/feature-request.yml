@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest a new capability or improvement for Factorio Tools Manager
+description: Suggest a new capability or improvement for Factorio Stack Manager
 title: "[Feature]: "
 labels:
   - enhancement
@@ -42,7 +42,7 @@ body:
     id: proposal
     attributes:
       label: Proposed outcome
-      description: Describe what you would like Factorio Tools Manager to do. Focus on the user experience; an implementation design is optional.
+      description: Describe what you would like Factorio Stack Manager to do. Focus on the user experience; an implementation design is optional.
     validations:
       required: true
 

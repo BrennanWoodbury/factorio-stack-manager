@@ -1,5 +1,5 @@
 name: Bug report
-description: Report reproducible incorrect behavior in Factorio Tools Manager
+description: Report reproducible incorrect behavior in Factorio Stack Manager
 title: "[Bug]: "
 labels:
   - bug

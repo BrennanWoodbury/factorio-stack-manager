@@ -3,7 +3,7 @@
   <Profile>
 Self-hosted tooling for running Factorio dedicated servers.
 
-**Factorio Tools Manager** runs many Factorio servers on one host from a single web
+**Factorio Stack Manager** runs many Factorio servers on one host from a single web
 UI — creation wizard with a pre-flight test boot, live RCON console and container
 logs, saves and scheduled backups, mods and shared modpacks, map-generation settings
 with per-planet previews, whitelists, and a per-server Factorio version. Each server
