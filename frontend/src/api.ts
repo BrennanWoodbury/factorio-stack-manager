@@ -249,6 +249,12 @@ export const api = {
   deleteModpack: (id: string) => req<void>('DELETE', `/modpacks/${id}`),
   setModpackMods: (id: string, mods: ModpackMod[]) =>
     req<{ mods: ModpackMod[] }>('PUT', `/modpacks/${id}/mods`, { mods }),
+  planModpack: (id: string, serverId: string) =>
+    req<{ mods: string[]; missing: string[] }>(
+      'GET',
+      `/modpacks/${id}/plan?serverId=${encodeURIComponent(serverId)}`,
+    ),
+
   applyModpack: (id: string, serverId: string) =>
     req<ApplyResult>('POST', `/modpacks/${id}/apply`, { serverId }),
   applyModpackToAll: (id: string) =>

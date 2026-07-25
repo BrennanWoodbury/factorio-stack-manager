@@ -6,12 +6,17 @@ const apiMocks = vi.hoisted(() => ({
   getMods: vi.fn(),
   putMods: vi.fn(),
   listModpacks: vi.fn(),
+  planModpack: vi.fn(),
   applyModpack: vi.fn(),
   resolveModDependencies: vi.fn(),
   searchMods: vi.fn(),
 }));
 
 vi.mock('../api', () => ({ api: apiMocks }));
+
+// Toasts render through a provider mounted in App, not here — assert on the call.
+const toasts = vi.hoisted(() => ({ toastError: vi.fn(), toastSuccess: vi.fn() }));
+vi.mock('../ui', () => ({ ...toasts, run: vi.fn() }));
 
 beforeEach(() => {
   apiMocks.getMods.mockResolvedValue({ mods: [{ name: 'base', enabled: true }] });
@@ -21,6 +26,8 @@ beforeEach(() => {
       { id: 'pack2', name: 'Vanilla+', description: '', modCount: 5 },
     ],
   });
+  // Nothing missing by default: applying goes straight through, no prompt.
+  apiMocks.planModpack.mockResolvedValue({ mods: ['flib'], missing: [] });
   apiMocks.applyModpack.mockResolvedValue({ serverId: 'draft1', downloaded: [], errors: [] });
   apiMocks.searchMods.mockResolvedValue({ results: [] });
 });
@@ -28,6 +35,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  toasts.toastError.mockClear();
+  toasts.toastSuccess.mockClear();
 });
 
 describe('WizardMods', () => {
@@ -76,6 +85,70 @@ describe('WizardMods', () => {
       ]),
     );
     expect(apiMocks.putMods).not.toHaveBeenCalled();
+  });
+
+  test('a pack whose mods are not downloaded asks before fetching them', async () => {
+    apiMocks.planModpack.mockResolvedValue({
+      mods: ['flib', 'Milestones'],
+      missing: ['flib', 'Milestones'],
+    });
+    render(<WizardMods draftId="draft1" />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'pack1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply & download' }));
+
+    expect(await screen.findByText('Download missing mods?')).toBeTruthy();
+    expect(screen.getByText(/flib, Milestones/)).toBeTruthy();
+    expect(apiMocks.applyModpack).not.toHaveBeenCalled();
+  });
+
+  test('declining the download leaves the mod list untouched', async () => {
+    // The state this avoids: a list naming mods the server does not have, which
+    // refuses to start and can only be fixed by re-saving it by hand.
+    apiMocks.planModpack.mockResolvedValue({ mods: ['flib'], missing: ['flib'] });
+    render(<WizardMods draftId="draft1" />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'pack1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply & download' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    await act(async () => {});
+    expect(apiMocks.applyModpack).not.toHaveBeenCalled();
+    expect(screen.queryByText('Download missing mods?')).toBeNull();
+    expect(toasts.toastError).toHaveBeenCalledWith(
+      expect.stringMatching(/not applied — 1 mod\(s\) still need downloading/),
+    );
+  });
+
+  test('accepting the download applies the pack', async () => {
+    apiMocks.planModpack.mockResolvedValue({ mods: ['flib'], missing: ['flib'] });
+    render(<WizardMods draftId="draft1" />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'pack1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply & download' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Download & apply' }));
+
+    await waitFor(() => expect(apiMocks.applyModpack).toHaveBeenCalledWith('pack1', 'draft1'));
+  });
+
+  test('a download failure reports which mod and why', async () => {
+    // "Applied with errors" over a list of names was the whole of the report, so
+    // a mod set that could not load came with nothing to act on.
+    apiMocks.applyModpack.mockResolvedValue({
+      serverId: 'draft1',
+      downloaded: [],
+      errors: [{ name: 'flib', error: 'Mod portal rejected credentials (check username/token)' }],
+    });
+    render(<WizardMods draftId="draft1" />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'pack1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply & download' }));
+
+    await waitFor(() =>
+      expect(toasts.toastError).toHaveBeenCalledWith(
+        expect.stringContaining('flib: Mod portal rejected credentials (check username/token)'),
+      ),
+    );
   });
 
   test('nothing is applied until a pack is chosen', async () => {

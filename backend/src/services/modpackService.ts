@@ -157,6 +157,27 @@ export class ModpackService {
   }
 
   /** Apply a pack to one server: replace its mod list and download the mods. */
+  /**
+   * What applying this pack would need to download first, without applying it.
+   *
+   * Lets the UI ask before it acts: applying writes the mod list and only then
+   * downloads, so an unattended failure leaves a server whose list names mods it
+   * does not have. Asking first means that state is never created by surprise.
+   */
+  plan(id: string, serverId: string): { mods: string[]; missing: string[] } {
+    const pack = this.repo.getById(id);
+    if (!pack) throw new NotFoundError('Modpack');
+    const server = this.servers.getById(serverId);
+    if (!server) throw new NotFoundError('Server');
+    const entries: ModEntry[] = this.repo
+      .listMods(id)
+      .map((m) => ({ name: m.name, enabled: m.enabled === 1, version: m.version ?? undefined }));
+    return {
+      mods: entries.map((e) => e.name),
+      missing: this.mods.missingMods(serverId, entries),
+    };
+  }
+
   async apply(id: string, serverId: string): Promise<ApplyResult> {
     const pack = this.repo.getById(id);
     if (!pack) throw new NotFoundError('Modpack');
