@@ -182,3 +182,198 @@ test('the catalog is fetched once and reused across searches', async () => {
     h.restore();
   }
 });
+
+/* ------------------------------------------------------------------ *
+ * Dependency resolution
+ * ------------------------------------------------------------------ */
+
+const DEPS: Portal = {
+  alpha: {
+    title: 'Alpha',
+    downloads: 100,
+    deps: [
+      'base >= 2.0.0',
+      'beta >= 1.2.0',
+      '~ gamma',
+      '+ delta >= 0.5.0',
+      '? epsilon',
+      '(?) zeta',
+      '! omega',
+      'ghost >= 1.0.0',
+    ],
+  },
+  beta: { title: 'Beta', downloads: 80, deps: ['base', 'theta >= 2.0.0'] },
+  gamma: { title: 'Gamma', downloads: 60, deps: [] },
+  theta: { title: 'Theta', downloads: 40, deps: ['? iota'] },
+  delta: { title: 'Delta', downloads: 30 },
+  epsilon: { title: 'Epsilon', downloads: 20 },
+  zeta: { title: 'Zeta', downloads: 10 },
+  iota: { title: 'Iota', downloads: 5 },
+  omega: { title: 'Omega', downloads: 1 },
+  // In the catalog, but its detail endpoint 404s.
+  hollow: { title: 'Hollow', downloads: 1, noDetail: true },
+  loopa: { title: 'Loop A', deps: ['loopb'] },
+  loopb: { title: 'Loop B', deps: ['loopa'] },
+};
+
+test('resolve walks hard dependencies transitively and reports what pulled each in', async () => {
+  const h = harness(DEPS);
+  try {
+    const r = await h.mods.resolveDependencies('alpha');
+    assert.deepEqual(
+      r.required.map((d) => d.name),
+      ['beta', 'gamma', 'theta'],
+      '`~` counts as required; transitive deps are included',
+    );
+    assert.equal(r.required.find((d) => d.name === 'theta')?.via, 'beta');
+    assert.equal(r.required.find((d) => d.name === 'beta')?.via, 'alpha');
+    assert.equal(r.title, 'Alpha');
+  } finally {
+    h.restore();
+  }
+});
+
+test('resolve reports version constraints verbatim without enforcing them', async () => {
+  const h = harness(DEPS);
+  try {
+    const r = await h.mods.resolveDependencies('alpha');
+    assert.equal(r.required.find((d) => d.name === 'beta')?.constraint, '>= 1.2.0');
+    assert.equal(r.required.find((d) => d.name === 'gamma')?.constraint, undefined);
+  } finally {
+    h.restore();
+  }
+});
+
+test('optional dependencies come from the requested mod only, and carry their prefix', async () => {
+  const h = harness(DEPS);
+  try {
+    const r = await h.mods.resolveDependencies('alpha');
+    assert.deepEqual(
+      r.optional.map((d) => d.name),
+      ['delta', 'epsilon', 'zeta'],
+      "theta's optional `iota` is not surfaced — the user didn't ask for theta",
+    );
+    const delta = r.optional.find((d) => d.name === 'delta');
+    assert.equal(delta?.defaultEnabled, true, '`+` is enabled by default');
+    assert.equal(r.optional.find((d) => d.name === 'zeta')?.hidden, true, '`(?)` is hidden');
+    assert.equal(delta?.constraint, '>= 0.5.0');
+  } finally {
+    h.restore();
+  }
+});
+
+test('installed and game-bundled dependencies are satisfied, not offered again', async () => {
+  const h = harness(DEPS);
+  try {
+    const r = await h.mods.resolveDependencies('alpha', ['beta', 'delta']);
+    assert.deepEqual(
+      r.required.map((d) => d.name),
+      ['gamma'],
+      'beta is installed, and its own deps are not re-walked',
+    );
+    assert.ok(r.satisfied.includes('base'), 'base ships with the game');
+    assert.ok(r.satisfied.includes('beta'));
+    assert.deepEqual(
+      r.optional.map((d) => d.name),
+      ['epsilon', 'zeta'],
+      'an installed optional is not offered',
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test('incompatible dependencies are flagged, and marked when already installed', async () => {
+  const h = harness(DEPS);
+  try {
+    const clean = await h.mods.resolveDependencies('alpha');
+    assert.deepEqual(
+      clean.incompatible.map((d) => d.name),
+      ['omega'],
+    );
+    assert.equal(clean.incompatible[0].installed, false);
+
+    const conflict = await h.mods.resolveDependencies('alpha', ['omega']);
+    assert.equal(conflict.incompatible[0].installed, true, 'a live conflict is called out');
+    assert.ok(
+      !conflict.required.some((d) => d.name === 'omega'),
+      'an incompatible mod is never added',
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test('dependencies with no portal entry are reported rather than silently dropped', async () => {
+  const h = harness(DEPS);
+  try {
+    const r = await h.mods.resolveDependencies('alpha');
+    assert.deepEqual(r.missing, ['ghost']);
+    assert.ok(!r.required.some((d) => d.name === 'ghost'));
+  } finally {
+    h.restore();
+  }
+});
+
+test('a mod whose detail endpoint 404s resolves to no dependencies', async () => {
+  const h = harness(DEPS);
+  try {
+    const r = await h.mods.resolveDependencies('beta');
+    assert.ok(r.required.some((d) => d.name === 'theta'));
+    await assert.rejects(
+      () => h.mods.resolveDependencies('hollow'),
+      /not found on the mod portal/,
+      'the requested mod itself missing is an error, not an empty dialog',
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test('a dependency cycle terminates', async () => {
+  const h = harness(DEPS);
+  try {
+    const r = await h.mods.resolveDependencies('loopa');
+    assert.deepEqual(
+      r.required.map((d) => d.name),
+      ['loopb'],
+    );
+    assert.equal(r.truncated, false);
+  } finally {
+    h.restore();
+  }
+});
+
+test('detail lookups are cached across resolves', async () => {
+  const h = harness(DEPS);
+  try {
+    await h.mods.resolveDependencies('alpha');
+    const first = h.calls.full.length;
+    await h.mods.resolveDependencies('alpha');
+    assert.equal(h.calls.full.length, first, 'second resolve hits the cache');
+    assert.equal(
+      new Set(h.calls.full).size,
+      first,
+      'each mod is fetched at most once within a resolve',
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test('a pathological graph is truncated instead of walked forever', async () => {
+  const chain: Portal = {};
+  for (let i = 0; i < 150; i++) {
+    chain[`m${i}`] = { title: `M${i}`, downloads: 150 - i, deps: [`m${i + 1}`] };
+  }
+  chain.m150 = { title: 'M150' };
+  const h = harness(chain);
+  try {
+    const r = await h.mods.resolveDependencies('m0');
+    assert.equal(r.truncated, true);
+    assert.ok(r.required.length <= 150, 'the walk stopped short of the whole chain');
+    assert.ok(h.calls.full.length < 150, 'and stopped requesting');
+  } finally {
+    h.restore();
+  }
+});

@@ -174,6 +174,36 @@ export interface CatalogEntry {
   factorioVersion?: string;
 }
 
+/** One dependency the user is being asked about before a mod is added. */
+export interface ResolvedDependency {
+  name: string;
+  title: string;
+  summary: string;
+  downloadsCount: number;
+  /** Version constraint as the mod author wrote it, e.g. ">= 0.14.0". Display only. */
+  constraint?: string;
+  /** The mod that pulled this in — the one being added, or a dependency of it. */
+  via: string;
+  /** Optional deps: `+`, which the game enables by default. */
+  defaultEnabled?: boolean;
+  /** Optional deps: `(?)`, hidden from the game's own mod GUI. */
+  hidden?: boolean;
+  /** Incompatible deps: whether the conflicting mod is already in the list. */
+  installed?: boolean;
+}
+
+/** What adding one mod would pull in — the payload behind the approve/cancel dialog. */
+export interface DependencyResolution {
+  name: string;
+  title: string;
+  required: ResolvedDependency[];
+  optional: ResolvedDependency[];
+  incompatible: ResolvedDependency[];
+  satisfied: string[];
+  missing: string[];
+  truncated: boolean;
+}
+
 export interface Modpack {
   id: string;
   name: string;

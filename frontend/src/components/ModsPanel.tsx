@@ -162,7 +162,7 @@ export function ModsPanel({ server }: { server: Server }) {
       </table>
 
       <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-        <ModSearchBox onAdd={addByName} isAdded={(name) => mods.some((m) => m.name === name)} />
+        <ModSearchBox onAdd={addByName} installed={mods.map((m) => m.name)} />
       </div>
 
       <div className="small muted" style={{ marginTop: 12 }}>

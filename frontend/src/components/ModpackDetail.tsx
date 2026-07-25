@@ -143,7 +143,7 @@ export function ModpackDetail({ id, onBack }: { id: string; onBack: () => void }
         )}
 
         <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-          <ModSearchBox onAdd={addMod} isAdded={(n) => mods.some((m) => m.name === n)} />
+          <ModSearchBox onAdd={addMod} installed={mods.map((m) => m.name)} />
         </div>
       </div>
     </>

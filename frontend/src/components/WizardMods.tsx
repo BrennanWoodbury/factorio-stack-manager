@@ -110,7 +110,7 @@ export function WizardMods({
       )}
 
       <div style={{ marginTop: 12 }}>
-        <ModSearchBox onAdd={addByName} isAdded={(name) => mods.some((m) => m.name === name)} />
+        <ModSearchBox onAdd={addByName} installed={mods.map((m) => m.name)} />
       </div>
       <div className="small muted" style={{ marginTop: 10 }}>
         Added mods need <strong>Save &amp; download</strong> before they're included in the test.

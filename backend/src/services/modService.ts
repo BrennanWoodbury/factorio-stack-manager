@@ -6,7 +6,7 @@ import type { DB } from '../db/index.js';
 import { AppError, ValidationError } from '../lib/errors.js';
 import { getFactorioAccount } from './factorioAccount.js';
 import { serverFiles, type ModEntry } from './serverFiles.js';
-import { KNOWN_BUNDLED_MODS } from './imageProfile.js';
+import { KNOWN_BUNDLED_MODS, parseDependencies, type ModDependency } from './imageProfile.js';
 
 const MOD_PORTAL_BASE = 'https://mods.factorio.com';
 
@@ -43,7 +43,61 @@ interface PortalListEntry {
   latest_release?: { version?: string; info_json?: { factorio_version?: string } };
 }
 
+/** Shape of the portal's `/api/mods/<name>/full` response (the parts we read). */
+interface PortalFullEntry {
+  name: string;
+  title?: string;
+  releases?: {
+    version: string;
+    info_json?: { dependencies?: unknown; factorio_version?: string };
+  }[];
+}
+
+/** A dependency the user is being asked to add, with catalog metadata for display. */
+export interface ResolvedDependency {
+  name: string;
+  title: string;
+  summary: string;
+  downloadsCount: number;
+  /** Version constraint as the mod author wrote it, e.g. ">= 0.14.0". Display only. */
+  constraint?: string;
+  /** The mod that pulled this in — the requested mod, or a dependency of it. */
+  via: string;
+  /** Optional deps only: `+` means the game enables it by default. */
+  defaultEnabled?: boolean;
+  /** Optional deps only: `(?)` hidden optional. */
+  hidden?: boolean;
+  /** Incompatible deps only: whether the conflicting mod is already in the list. */
+  installed?: boolean;
+}
+
+/** What adding a mod would pull in, for the approve/cancel dialog. */
+export interface DependencyResolution {
+  name: string;
+  title: string;
+  /** Hard dependencies that are not installed yet — added on approve. */
+  required: ResolvedDependency[];
+  /** Optional dependencies of the requested mod — added only if ticked. */
+  optional: ResolvedDependency[];
+  /** `!` conflicts found anywhere in the required closure. Advisory only. */
+  incompatible: ResolvedDependency[];
+  /** Hard dependencies already covered: installed, or shipped with the game. */
+  satisfied: string[];
+  /** Hard dependencies with no mod portal entry — cannot be added automatically. */
+  missing: string[];
+  /** True when the closure hit MAX_DEPENDENCY_NODES and may be incomplete. */
+  truncated: boolean;
+}
+
 const CATALOG_TTL_MS = 6 * 60 * 60 * 1000; // 6h
+const MOD_DETAIL_TTL_MS = 60 * 60 * 1000; // 1h
+
+/**
+ * Safety valve on the transitive walk: one `/full` request per node, so a
+ * pathological graph would otherwise hammer the portal. Overhaul mods sit around
+ * 20 nodes; 100 leaves plenty of headroom.
+ */
+const MAX_DEPENDENCY_NODES = 100;
 
 /**
  * Mods that ship with the game data and must NOT be downloaded from the mod
@@ -80,6 +134,10 @@ export class ModService {
   private catalog: CatalogEntry[] = [];
   private catalogFetchedAt = 0;
   private catalogInFlight?: Promise<CatalogEntry[]>;
+
+  // Per-mod dependency lists from the `/full` endpoint. `deps: undefined` caches a
+  // 404 so a missing dependency isn't re-requested on every resolve.
+  private depsCache = new Map<string, { at: number; deps: ModDependency[] | undefined }>();
 
   private async ensureCatalog(force = false): Promise<CatalogEntry[]> {
     const fresh = Date.now() - this.catalogFetchedAt < CATALOG_TTL_MS;
@@ -154,6 +212,149 @@ export class ModService {
     }
     scored.sort((a, b) => a.rank - b.rank || b.entry.downloadsCount - a.entry.downloadsCount);
     return scored.slice(0, limit).map((s) => s.entry);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Dependency resolution
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Dependencies declared by a mod's newest release, or undefined when the portal
+   * has no such mod. Cached per name — a single resolve visits each node once,
+   * but overhaul packs share dependencies heavily across resolves.
+   *
+   * The listing endpoint's `info_json` carries only `factorio_version`, so this
+   * has to be the per-mod `/full` endpoint.
+   */
+  private async dependenciesOf(name: string): Promise<ModDependency[] | undefined> {
+    const hit = this.depsCache.get(name);
+    if (hit && Date.now() - hit.at < MOD_DETAIL_TTL_MS) return hit.deps;
+
+    let res: Response;
+    try {
+      res = await fetch(`${MOD_PORTAL_BASE}/api/mods/${encodeURIComponent(name)}/full`, {
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (err) {
+      throw new AppError(`Mod portal unreachable: ${(err as Error).message}`, 502, 'MOD_PORTAL');
+    }
+    if (res.status === 404) {
+      this.depsCache.set(name, { at: Date.now(), deps: undefined });
+      return undefined;
+    }
+    if (!res.ok) throw new AppError(`Mod portal HTTP ${res.status}`, 502, 'MOD_PORTAL');
+    const info = (await res.json()) as PortalFullEntry;
+    // Releases come oldest-first, same as the download path assumes.
+    const latest = info.releases?.[info.releases.length - 1];
+    const deps = parseDependencies(latest?.info_json?.dependencies);
+    this.depsCache.set(name, { at: Date.now(), deps });
+    return deps;
+  }
+
+  /**
+   * Work out everything adding `name` would pull in, for the approve/cancel
+   * dialog. Walks hard dependencies transitively; optional dependencies are
+   * reported for the requested mod only, since an optional's optionals are not
+   * something the user asked about.
+   *
+   * Mods already in `installed` are treated as satisfied and are not walked into:
+   * whatever they needed was resolved when they were added, and re-walking them
+   * would fill the dialog with things the user never touched.
+   *
+   * Nothing here enforces version constraints — the download path always takes a
+   * mod's latest release, so constraints are surfaced as text for the user to judge.
+   */
+  async resolveDependencies(
+    name: string,
+    installed: readonly string[] = [],
+  ): Promise<DependencyResolution> {
+    const rootDeps = await this.dependenciesOf(name);
+    if (!rootDeps) throw new ValidationError(`Mod "${name}" not found on the mod portal`);
+
+    const catalog = await this.ensureCatalog();
+    const meta = new Map(catalog.map((e) => [e.name, e]));
+    const have = new Set(installed);
+    const covered = (dep: string) => have.has(dep) || BUNDLED_MODS.has(dep);
+
+    const describe = (dep: ModDependency, via: string): ResolvedDependency => {
+      const entry = meta.get(dep.name);
+      return {
+        name: dep.name,
+        title: entry?.title ?? dep.name,
+        summary: entry?.summary ?? '',
+        downloadsCount: entry?.downloadsCount ?? 0,
+        constraint: dep.constraint,
+        via,
+      };
+    };
+
+    const required = new Map<string, ResolvedDependency>();
+    const incompatible = new Map<string, ResolvedDependency>();
+    const satisfied = new Set<string>();
+    const missing = new Set<string>();
+    const visited = new Set<string>([name]);
+    let truncated = false;
+
+    // Breadth-first so `via` names the shallowest mod that pulled a dep in, and
+    // so each level's portal lookups go out in parallel.
+    let frontier: { deps: ModDependency[]; via: string }[] = [{ deps: rootDeps, via: name }];
+    while (frontier.length > 0) {
+      const next: string[] = [];
+      for (const { deps, via } of frontier) {
+        for (const dep of deps) {
+          if (dep.kind === 'incompatible') {
+            if (!incompatible.has(dep.name)) {
+              incompatible.set(dep.name, { ...describe(dep, via), installed: have.has(dep.name) });
+            }
+            continue;
+          }
+          if (dep.kind === 'optional') continue; // collected from the root separately
+          if (covered(dep.name)) {
+            satisfied.add(dep.name);
+            continue;
+          }
+          if (visited.has(dep.name)) continue;
+          visited.add(dep.name);
+          if (!meta.has(dep.name)) {
+            // Not in the catalog: renamed, unlisted, or a typo in the manifest.
+            missing.add(dep.name);
+            continue;
+          }
+          required.set(dep.name, describe(dep, via));
+          if (visited.size > MAX_DEPENDENCY_NODES) {
+            truncated = true;
+            continue;
+          }
+          next.push(dep.name);
+        }
+      }
+      const fetched = await Promise.all(
+        next.map(async (dep) => ({ deps: (await this.dependenciesOf(dep)) ?? [], via: dep })),
+      );
+      frontier = fetched.filter((f) => f.deps.length > 0);
+    }
+
+    const optional = rootDeps
+      .filter((d) => d.kind === 'optional' && !covered(d.name) && meta.has(d.name))
+      .map((d) => ({
+        ...describe(d, name),
+        defaultEnabled: d.defaultEnabled,
+        hidden: d.hidden,
+      }));
+
+    const byDownloads = (a: ResolvedDependency, b: ResolvedDependency) =>
+      b.downloadsCount - a.downloadsCount;
+
+    return {
+      name,
+      title: meta.get(name)?.title ?? name,
+      required: [...required.values()].sort(byDownloads),
+      optional: optional.sort(byDownloads),
+      incompatible: [...incompatible.values()].sort(byDownloads),
+      satisfied: [...satisfied].sort(),
+      missing: [...missing].sort(),
+      truncated,
+    };
   }
 
   /** Fetch a mod's full release list from the portal. */

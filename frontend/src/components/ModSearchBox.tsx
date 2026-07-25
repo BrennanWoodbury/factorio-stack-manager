@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import type { CatalogEntry } from '../types';
+import type { CatalogEntry, DependencyResolution } from '../types';
 import { toastError } from '../ui';
+import { ModDependencyDialog } from './ModDependencyDialog';
 
 function fmtDownloads(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -10,21 +11,52 @@ function fmtDownloads(n: number): string {
 }
 
 /**
- * Debounced Factorio Mod Portal search box with a results list. Reused by both
- * the per-server Mods tab and the modpack editor. Calls `onAdd(name)` when the
- * user clicks Add; `isAdded(name)` controls the disabled/"Added" state.
+ * Debounced Factorio Mod Portal search box with a results list. Reused by the
+ * per-server Mods tab, the new-server wizard and the modpack editor.
+ *
+ * Add resolves the mod's dependencies first. When it needs nothing the user
+ * doesn't already have, it is added straight away; otherwise a dialog lists what
+ * would come with it and `onAdd` fires once per mod only after approval.
  */
 export function ModSearchBox({
   onAdd,
-  isAdded,
+  installed,
 }: {
   onAdd: (name: string) => void;
-  isAdded: (name: string) => boolean;
+  /** Names already in the caller's list — drives "Added" and dependency pruning. */
+  installed: string[];
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CatalogEntry[]>([]);
   const [searching, setSearching] = useState(false);
+  const [resolving, setResolving] = useState<string>();
+  const [pending, setPending] = useState<DependencyResolution>();
   const debounce = useRef<ReturnType<typeof setTimeout>>();
+  const isAdded = (name: string) => installed.includes(name);
+
+  /**
+   * Resolve, then either add outright or open the dialog. A resolve failure (the
+   * portal being down, say) must not block adding the mod itself, so it falls
+   * back to the old behaviour with a warning.
+   */
+  const add = async (name: string) => {
+    setResolving(name);
+    try {
+      const r = await api.resolveModDependencies(name, installed);
+      const needsApproval =
+        r.required.length > 0 ||
+        r.optional.length > 0 ||
+        r.missing.length > 0 ||
+        r.incompatible.some((d) => d.installed);
+      if (needsApproval) setPending(r);
+      else onAdd(name);
+    } catch (err) {
+      toastError(`Couldn't check dependencies: ${(err as Error).message}`);
+      onAdd(name);
+    } finally {
+      setResolving(undefined);
+    }
+  };
 
   useEffect(() => {
     clearTimeout(debounce.current);
@@ -98,8 +130,8 @@ export function ModSearchBox({
                     {r.factorioVersion ? ` · Factorio ${r.factorioVersion}` : ''}
                   </div>
                 </div>
-                <button disabled={added} onClick={() => onAdd(r.name)}>
-                  {added ? 'Added' : 'Add'}
+                <button disabled={added || resolving !== undefined} onClick={() => void add(r.name)}>
+                  {added ? 'Added' : resolving === r.name ? 'Checking…' : 'Add'}
                 </button>
               </div>
             );
@@ -110,6 +142,19 @@ export function ModSearchBox({
         <div className="small muted" style={{ marginTop: 8 }}>
           No matching mods.
         </div>
+      )}
+
+      {pending && (
+        <ModDependencyDialog
+          resolution={pending}
+          onCancel={() => setPending(undefined)}
+          onConfirm={(names) => {
+            setPending(undefined);
+            // One call per mod: the callers own their own list state, and each
+            // already ignores names it holds.
+            for (const name of names) onAdd(name);
+          }}
+        />
       )}
     </div>
   );
