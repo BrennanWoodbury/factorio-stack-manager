@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import type { DnsReconcileResult, DnsSettings } from '../types';
 import { run, toastError, toastSuccess } from '../ui';
 
@@ -66,7 +66,9 @@ export function DnsSettingsPanel() {
 
   const save = async () => {
     setBusy(true);
+    let settingsConflict = false;
     const patch: Record<string, unknown> = {
+      expectedRevision: dns.revision,
       baseDomain,
       cloudflareZoneId: zoneId,
       ddnsIntervalSeconds: interval,
@@ -75,18 +77,26 @@ export function DnsSettingsPanel() {
     // Only send the token when the admin actually typed one (blank keeps the current).
     if (token.trim()) patch.cloudflareToken = token.trim();
     const ok = await run(async () => {
-      const r = await api.setDns(patch);
-      setDns(r.dns);
-      setReconciliation(r.reconciliation ?? null);
-      setToken('');
+      try {
+        const r = await api.setDns(patch);
+        setDns(r.dns);
+        setReconciliation(r.reconciliation ?? null);
+        setToken('');
+      } catch (err) {
+        settingsConflict = err instanceof ApiError && err.code === 'DNS_SETTINGS_CONFLICT';
+        throw err;
+      }
     }, 'DNS settings saved');
     setBusy(false);
-    if (ok) await load();
+    if (ok || settingsConflict) await load();
   };
 
   const clearToken = async () => {
     if (!confirm('Remove the Cloudflare API token? This disables DNS automation.')) return;
-    await run(() => api.setDns({ cloudflareToken: '' }), 'Token cleared');
+    await run(
+      () => api.setDns({ cloudflareToken: '', expectedRevision: dns.revision }),
+      'Token cleared',
+    );
     await load();
   };
 
@@ -221,6 +231,7 @@ export function DnsSettingsPanel() {
           <input
             type="password"
             aria-label="API token"
+            autoComplete="new-password"
             placeholder={dns.hasToken ? '••••••••' : 'Cloudflare API token'}
             value={token}
             onChange={(e) => setToken(e.target.value)}

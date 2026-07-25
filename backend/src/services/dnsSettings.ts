@@ -7,6 +7,7 @@ import { kvGet, kvSet, type DB } from '../db/index.js';
  * hostname or an existing CNAME.
  */
 export interface DnsSettings {
+  revision: number;
   baseDomain: string;
   hostRecordName: string;
   cloudflareZoneId: string;
@@ -26,6 +27,7 @@ const K = {
   token: 'dns_token',
   interval: 'dns_ddns_interval_seconds',
   ipCheckUrl: 'dns_ip_check_url',
+  revision: 'dns_settings_revision',
 } as const;
 
 export const DEFAULT_DDNS_INTERVAL = 300;
@@ -43,8 +45,10 @@ export function storedHostRecordName(db: DB): string {
 
 export function getDnsSettings(db: DB): DnsSettings {
   const interval = Number(kvGet(db, K.interval));
+  const revision = Number(kvGet(db, K.revision));
   const baseDomain = kvGet(db, K.baseDomain) ?? '';
   return {
+    revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
     baseDomain,
     hostRecordName: deriveHostRecordName(baseDomain),
     cloudflareZoneId: kvGet(db, K.zoneId) ?? '',
@@ -66,21 +70,40 @@ export interface DnsSettingsPatch {
 }
 
 export function setDnsSettings(db: DB, patch: DnsSettingsPatch): void {
+  let changed = false;
   if (patch.baseDomain !== undefined) {
+    changed = true;
     const baseDomain = patch.baseDomain.trim().toLowerCase().replace(/\.$/, '');
     kvSet(db, K.baseDomain, baseDomain);
     kvSet(db, K.hostRecordName, deriveHostRecordName(baseDomain));
   }
   if (patch.cloudflareZoneId !== undefined) {
+    changed = true;
     kvSet(db, K.zoneId, patch.cloudflareZoneId.trim());
     if (patch.cloudflareZoneName === undefined) kvSet(db, K.zoneName, '');
   }
-  if (patch.cloudflareZoneName !== undefined)
+  if (patch.cloudflareZoneName !== undefined) {
+    changed = true;
     kvSet(db, K.zoneName, patch.cloudflareZoneName.trim().toLowerCase().replace(/\.$/, ''));
-  if (patch.cloudflareToken !== undefined) kvSet(db, K.token, patch.cloudflareToken.trim());
-  if (patch.ddnsIntervalSeconds !== undefined)
+  }
+  if (patch.cloudflareToken !== undefined) {
+    changed = true;
+    kvSet(db, K.token, patch.cloudflareToken.trim());
+  }
+  if (patch.ddnsIntervalSeconds !== undefined) {
+    changed = true;
     kvSet(db, K.interval, String(Math.max(30, Math.floor(patch.ddnsIntervalSeconds))));
-  if (patch.ipCheckUrl !== undefined) kvSet(db, K.ipCheckUrl, patch.ipCheckUrl.trim());
+  }
+  if (patch.ipCheckUrl !== undefined) {
+    changed = true;
+    kvSet(db, K.ipCheckUrl, patch.ipCheckUrl.trim());
+  }
+  if (changed) {
+    const currentRevision = Number(kvGet(db, K.revision));
+    const revision =
+      Number.isSafeInteger(currentRevision) && currentRevision >= 0 ? currentRevision : 0;
+    kvSet(db, K.revision, String(revision + 1));
+  }
 }
 
 /** DNS automation is on only when everything it needs is present. */
@@ -91,6 +114,7 @@ export function dnsEnabled(s: DnsSettings): boolean {
 /** UI-facing view: token is never returned, only whether it's set. */
 export function dnsSettingsDto(s: DnsSettings) {
   return {
+    revision: s.revision,
     baseDomain: s.baseDomain,
     hostRecordName: s.hostRecordName,
     cloudflareZoneId: s.cloudflareZoneId,

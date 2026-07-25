@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { ApiError } from '../api';
 import { DnsSettingsPanel } from './DnsSettingsPanel';
 import type { DnsSettings } from '../types';
 
@@ -10,9 +11,13 @@ const apiMocks = vi.hoisted(() => ({
   reconcileDns: vi.fn(),
 }));
 
-vi.mock('../api', () => ({ api: apiMocks }));
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api')>();
+  return { ...actual, api: apiMocks };
+});
 
 const disabledDns: DnsSettings = {
+  revision: 0,
   baseDomain: '',
   hostRecordName: '',
   cloudflareZoneId: '',
@@ -33,6 +38,7 @@ beforeEach(() => {
   apiMocks.setDns.mockResolvedValue({
     dns: {
       ...disabledDns,
+      revision: 1,
       baseDomain: 'games.example.com',
       hostRecordName: 'factorio-tools-manager.games.example.com',
       cloudflareZoneId: 'zone-123',
@@ -77,7 +83,9 @@ describe('DnsSettingsPanel', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Cloudflare Zone ID' }), {
       target: { value: 'zone-123' },
     });
-    fireEvent.change(screen.getByLabelText('API token'), {
+    const tokenInput = screen.getByLabelText('API token');
+    expect(tokenInput.getAttribute('autocomplete')).toBe('new-password');
+    fireEvent.change(tokenInput, {
       target: { value: 'candidate-token' },
     });
 
@@ -93,6 +101,9 @@ describe('DnsSettingsPanel', () => {
     expect(await screen.findByText('✓ Public IP 203.0.113.42')).toBeTruthy();
     expect((screen.getByRole('textbox', { name: 'Generated host record' }) as HTMLInputElement).value)
       .toBe('factorio-tools-manager.games.example.com');
+    expect(
+      (screen.getByRole('textbox', { name: 'Generated host record' }) as HTMLInputElement).readOnly,
+    ).toBe(true);
     expect((screen.getByRole('textbox', { name: 'Cloudflare Zone ID' }) as HTMLInputElement).value)
       .toBe('zone-123');
     expect((screen.getByRole('textbox', { name: 'Cloudflare zone name' }) as HTMLInputElement).value)
@@ -101,6 +112,15 @@ describe('DnsSettingsPanel', () => {
 
     fireEvent.click(save);
     await waitFor(() => expect(apiMocks.setDns).toHaveBeenCalledOnce());
+    expect(apiMocks.setDns).toHaveBeenCalledWith({
+      expectedRevision: 0,
+      baseDomain: 'games.example.com',
+      cloudflareZoneId: 'zone-123',
+      cloudflareToken: 'candidate-token',
+      ddnsIntervalSeconds: 300,
+      ipCheckUrl: 'https://api.ipify.org',
+    });
+    expect(apiMocks.setDns.mock.calls[0][0]).not.toHaveProperty('hostRecordName');
   });
 
   test('links directly to Cloudflare Zone ID instructions', async () => {
@@ -108,6 +128,33 @@ describe('DnsSettingsPanel', () => {
     const link = await screen.findByRole('link', { name: 'Cloudflare instructions' });
     expect(link.getAttribute('href')).toBe(
       'https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/',
+    );
+  });
+
+  test('reloads current settings when another admin saved first', async () => {
+    const activeDns: DnsSettings = {
+      ...disabledDns,
+      revision: 4,
+      baseDomain: 'games.example.com',
+      hostRecordName: 'factorio-tools-manager.games.example.com',
+      cloudflareZoneId: 'zone-123',
+      cloudflareZoneName: 'example.com',
+      hasToken: true,
+      enabled: true,
+    };
+    apiMocks.getDns.mockResolvedValue({ dns: activeDns });
+    apiMocks.setDns.mockRejectedValue(
+      new ApiError('DNS settings changed in another session', 'DNS_SETTINGS_CONFLICT', 409),
+    );
+    render(<DnsSettingsPanel />);
+
+    const save = await screen.findByRole('button', { name: 'Save & enable DNS' });
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(save);
+
+    await waitFor(() => expect(apiMocks.getDns).toHaveBeenCalledTimes(2));
+    expect(apiMocks.setDns).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedRevision: 4 }),
     );
   });
 

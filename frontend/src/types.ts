@@ -203,6 +203,7 @@ export interface ApplyResult {
 }
 
 export interface DnsSettings {
+  revision: number;
   baseDomain: string;
   hostRecordName: string;
   cloudflareZoneId: string;

@@ -34,6 +34,16 @@ export class DuplicateMapGenTemplateError extends AppError {
   }
 }
 
+export class DnsSettingsConflictError extends AppError {
+  constructor() {
+    super(
+      'DNS settings changed in another session. Reload the latest values and test them again before saving.',
+      409,
+      'DNS_SETTINGS_CONFLICT',
+    );
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(what = 'Resource') {
     super(`${what} not found`, 404, 'NOT_FOUND');
