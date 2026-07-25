@@ -6,6 +6,7 @@ import { ServersRepo } from '../db/serversRepo.js';
 import { PortAllocator } from './portAllocator.js';
 import { DockerService, containerStatusLabel } from './dockerService.js';
 import { DnsService } from './dnsService.js';
+import { serverDnsEnabled } from './dnsSettings.js';
 import { RconService } from './rconService.js';
 import { serverFiles, sanitizeName, type ModEntry } from './serverFiles.js';
 import { getFactorioAccount } from './factorioAccount.js';
@@ -54,6 +55,8 @@ export interface CreateServerInput {
   generateNewSave?: boolean;
   factorioTag?: string;
   autoRestart?: boolean;
+  /** Opt this server out of Cloudflare records entirely. Defaults to on. */
+  dnsEnabled?: boolean;
   gameMode?: string;
   mods?: ModEntry[];
   /** Initial map-gen-settings for the server's first generated map (optional). */
@@ -69,6 +72,7 @@ export interface UpdateServerInput {
   generateNewSave?: boolean;
   factorioTag?: string;
   autoRestart?: boolean;
+  dnsEnabled?: boolean;
   gameMode?: string;
   autoBackup?: boolean;
   backupIntervalMinutes?: number;
@@ -173,6 +177,9 @@ export class ServerManager {
   }
 
   connectHost(row: ServerRow): string | undefined {
+    // A server opted out of DNS has no hostname to advertise — the UI falls back
+    // to IP:port, which is the only way to reach it.
+    if (!serverDnsEnabled(row)) return undefined;
     return this.dns.connectHost(row.subdomain);
   }
 
@@ -212,6 +219,7 @@ export class ServerManager {
       whitelist_json: null,
       factorio_tag: this.cleanTag(input.factorioTag),
       auto_restart: g.autoRestart ? 1 : 0,
+      dns_enabled: input.dnsEnabled === false ? 0 : 1,
       adminlist_json: null,
       desired_state: 'stopped',
       auto_backup: g.autoBackup ? 1 : 0,
@@ -326,6 +334,7 @@ export class ServerManager {
       whitelist_json: null,
       factorio_tag: this.cleanTag(input.factorioTag),
       auto_restart: g.autoRestart ? 1 : 0,
+      dns_enabled: input.dnsEnabled === false ? 0 : 1,
       adminlist_json: null,
       desired_state: 'stopped',
       auto_backup: g.autoBackup ? 1 : 0,
@@ -684,6 +693,16 @@ export class ServerManager {
       const gm = cleanGameMode(input.gameMode);
       if (gm !== current.game_mode) set('game_mode', gm, true); // changes mods → restart-relevant
     }
+    // DNS participation is a Cloudflare-only concern: the container is unaffected,
+    // so this is never restart-relevant. The record itself is reconciled below.
+    let dnsChanged = false;
+    if (input.dnsEnabled !== undefined) {
+      const flag = input.dnsEnabled ? 1 : 0;
+      if (flag !== current.dns_enabled) {
+        set('dns_enabled', flag, false);
+        dnsChanged = true;
+      }
+    }
     // Cascading settings (auto_restart + backup config): explicitly setting one marks
     // it overridden, so it stops tracking the global default until reset. Never
     // restart-worthy (auto_restart toggling and backup config apply without a restart).
@@ -715,8 +734,9 @@ export class ServerManager {
     this.repo.update(id, fields as never);
     const updated = this.get(id);
 
-    // A subdomain change must update the SRV record name (live, no restart).
-    if (subdomainChanged) {
+    // A subdomain change must update the SRV record name, and flipping the DNS
+    // toggle must create or remove the record. Both live, neither needs a restart.
+    if (subdomainChanged || dnsChanged) {
       await this.dns.updateServerSrv(updated);
     }
     await this.maybeAutoRestart(id, restartRelevantChanged);

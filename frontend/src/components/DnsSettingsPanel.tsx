@@ -22,6 +22,7 @@ export function DnsSettingsPanel() {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [reconciliation, setReconciliation] = useState<DnsReconcileResult | null>(null);
   const [validatedFingerprint, setValidatedFingerprint] = useState<string | null>(null);
+  const [enabled, setEnabled] = useState(true);
 
   const fingerprint = (hasStoredToken: boolean) =>
     JSON.stringify([
@@ -43,8 +44,9 @@ export function DnsSettingsPanel() {
       setToken('');
       setTestResult(null);
       setReconciliation(reconciliation ?? null);
+      setEnabled(dns.enabled);
       setValidatedFingerprint(
-        dns.enabled
+        dns.configured
           ? JSON.stringify([
               dns.baseDomain,
               dns.cloudflareZoneId,
@@ -69,6 +71,7 @@ export function DnsSettingsPanel() {
     let settingsConflict = false;
     const patch: Record<string, unknown> = {
       expectedRevision: dns.revision,
+      enabled,
       baseDomain,
       cloudflareZoneId: zoneId,
       ddnsIntervalSeconds: interval,
@@ -155,19 +158,43 @@ export function DnsSettingsPanel() {
       <div className="spread" style={{ marginBottom: 8 }}>
         <h2 style={{ margin: 0 }}>
           DNS / Cloudflare{' '}
-          <span className={`badge ${dns.enabled ? 'running' : 'stopped'}`} style={{ marginLeft: 6 }}>
+          <span className={`badge ${dns.active ? 'running' : 'stopped'}`} style={{ marginLeft: 6 }}>
             <span className="dot" />
-            {dns.enabled ? 'Active' : 'Off'}
+            {dns.active ? 'Active' : 'Off'}
           </span>
         </h2>
-        <button className="primary" disabled={busy || !tested} onClick={() => void save()}>
-          {busy ? 'Saving…' : 'Save & enable DNS'}
+        <button
+          className="primary"
+          disabled={busy || (enabled && !tested)}
+          onClick={() => void save()}
+        >
+          {busy ? 'Saving…' : enabled ? 'Save & enable DNS' : 'Save'}
         </button>
       </div>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px' }}>
+        <input
+          type="checkbox"
+          style={{ width: 'auto' }}
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span style={{ color: 'var(--text)' }}>Manage DNS with Cloudflare</span>
+      </label>
       <div className="small muted" style={{ marginBottom: 12 }}>
-        Test the configuration before enabling automatic per-server SRV records + DDNS. Settings
-        are stored in the app's database (not env). Use a token with{' '}
-        <span className="mono">Zone:DNS:Edit</span> for the selected zone.
+        {enabled ? (
+          <>
+            Test the configuration before enabling automatic per-server SRV records + DDNS.
+            Settings are stored in the app's database (not env). Use a token with{' '}
+            <span className="mono">Zone:DNS:Edit</span> for the selected zone.
+          </>
+        ) : (
+          <>
+            DNS automation is off: no records are created, updated or refreshed, and players
+            connect by IP:port. Your domain, zone and token stay saved, so ticking this box turns
+            it back on without retyping anything. Records already in Cloudflare are left alone.
+          </>
+        )}
       </div>
 
       <div className="row">
@@ -306,7 +333,7 @@ export function DnsSettingsPanel() {
         )}
       </div>
 
-      {dns.enabled && (
+      {dns.active && (
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
           <div className="spread" style={{ alignItems: 'center' }}>
             <div>

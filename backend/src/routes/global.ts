@@ -40,6 +40,9 @@ export function globalRouter(ctx: AppContext): Router {
     asyncHandler(async (req, res) => {
       const body = parse(
         z.object({
+          // The on/off switch, independent of the credentials below: turning DNS
+          // off must not require clearing settings the user would have to retype.
+          enabled: z.boolean().optional(),
           baseDomain: z.string().max(253).optional(),
           cloudflareZoneId: z.string().max(64).optional(),
           // Only sent when the admin (re)enters it. '' explicitly clears it.

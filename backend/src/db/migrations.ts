@@ -172,6 +172,15 @@ const MIGRATIONS: Migration[] = [
       db.exec('ALTER TABLE servers ADD COLUMN draft_state_json TEXT');
     },
   },
+  {
+    version: 15,
+    backwardCompatible: true,
+    // Per-server DNS opt-out. A server can be excluded from Cloudflare entirely
+    // (players connect by IP:port) while DNS stays on globally — useful for a
+    // private or throwaway server that shouldn't appear in public DNS. Existing
+    // servers all had records, so they default to 1.
+    up: (db) => db.exec('ALTER TABLE servers ADD COLUMN dns_enabled INTEGER NOT NULL DEFAULT 1'),
+  },
 ];
 
 /** Highest migration this build knows how to apply. */

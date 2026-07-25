@@ -50,6 +50,8 @@ export interface ServerRow {
   map_settings_json: string | null;
   /** 'vanilla' | 'space_age' | 'modded'. Migration v13. */
   game_mode: string;
+  /** 0 excludes this server from Cloudflare entirely. Migration v15. */
+  dns_enabled: number;
   /** 'draft' (wizard in progress) | 'active' (real server). Migration v14. */
   lifecycle: string;
   /** ISO time a draft is pruned at; null for active servers. Migration v14. */
@@ -145,6 +147,8 @@ export interface ServerDto {
   /** Per-server image tag ('' = global default). */
   factorioTag: string;
   autoRestart: boolean;
+  /** Whether this server gets Cloudflare records at all. */
+  dnsEnabled: boolean;
   autoBackup: boolean;
   backupIntervalMinutes: number;
   backupKeep: number;
@@ -188,6 +192,7 @@ export function toDto(
     appliedModpackId: row.applied_modpack_id ?? null,
     factorioTag: row.factorio_tag ?? '',
     autoRestart: row.auto_restart === 1,
+    dnsEnabled: row.dns_enabled !== 0,
     autoBackup: row.auto_backup === 1,
     backupIntervalMinutes: row.backup_interval_minutes,
     backupKeep: row.backup_keep,

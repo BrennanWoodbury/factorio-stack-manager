@@ -111,6 +111,29 @@ export function SettingsPanel({
           </div>
         </div>
 
+        <div style={{ marginTop: 14 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+            <input
+              type="checkbox"
+              style={{ width: 'auto' }}
+              checked={server.dnsEnabled}
+              onChange={(e) =>
+                void run(
+                  () => api.updateServer(server.id, { dnsEnabled: e.target.checked }),
+                  e.target.checked ? 'DNS record created' : 'DNS record removed',
+                ).then((ok) => ok && onChanged())
+              }
+            />
+            <span style={{ color: 'var(--text)' }}>Publish this server in DNS</span>
+          </label>
+          <div className="small muted" style={{ marginTop: 4 }}>
+            {server.dnsEnabled
+              ? 'Players connect by hostname. Turning this off removes this server\'s Cloudflare record immediately; the server keeps running and stays reachable at its IP:port.'
+              : 'This server is excluded from Cloudflare — players connect by IP:port. Other servers are unaffected.'}{' '}
+            Only has an effect while DNS is configured on the Servers dashboard.
+          </div>
+        </div>
+
         <div className="small muted" style={{ marginTop: 12 }}>
           Factorio.com credentials (mods & public listing) are a global setting on the Servers
           dashboard — {server.hasFactorioCredentials ? 'currently set' : 'not set yet'}.
