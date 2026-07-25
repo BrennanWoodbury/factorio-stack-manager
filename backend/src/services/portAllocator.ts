@@ -19,6 +19,13 @@ export type PortRange = readonly [number, number];
  * gets advertised in the Factorio SRV record and must equal the externally
  * reachable port (the router forward is manual and 1:1). RCON ports come from a
  * separate range and are never forwarded/advertised.
+ *
+ * The table is authoritative for what *this manager* handed out, which is not the
+ * same as what is free on the host: a Factorio server run outside the tool, or any
+ * other process, can hold a port in the range. Callers pass those in as `blocked`
+ * so they are skipped — see DockerService.hostPortsInUse() for the ports other
+ * containers hold, and ServerManager.start() for recovering from a bind failure
+ * the host only reveals at container start.
  */
 export class PortAllocator {
   constructor(
@@ -39,12 +46,15 @@ export class PortAllocator {
     return kind === 'game' ? this.gameRange : this.rconRange;
   }
 
-  /** Lowest free port of `kind`, or throw if the pool is exhausted. Does NOT claim. */
-  private nextFree(kind: PortKind): number {
+  /**
+   * Lowest port of `kind` that is neither claimed nor `blocked`, or throw if the
+   * pool is exhausted. Does NOT claim.
+   */
+  private nextFree(kind: PortKind, blocked?: ReadonlySet<number>): number {
     const [start, end] = this.rangeFor(kind);
     const taken = this.takenSet(kind);
     for (let p = start; p <= end; p++) {
-      if (!taken.has(p)) return p;
+      if (!taken.has(p) && !blocked?.has(p)) return p;
     }
     throw new PortPoolExhaustedError(kind);
   }
@@ -60,13 +70,40 @@ export class PortAllocator {
    * succeed or neither is claimed (the transaction rolls back on any failure,
    * including pool exhaustion of the second range after the first was claimed).
    */
-  allocatePair(serverId: string): { gamePort: number; rconPort: number } {
+  allocatePair(
+    serverId: string,
+    blocked?: ReadonlySet<number>,
+  ): { gamePort: number; rconPort: number } {
     const txn = this.db.transaction((sid: string) => {
-      const gamePort = this.nextFree('game');
+      const gamePort = this.nextFree('game', blocked);
       this.claim('game', gamePort, sid);
-      const rconPort = this.nextFree('rcon');
+      const rconPort = this.nextFree('rcon', blocked);
       this.claim('rcon', rconPort, sid);
       return { gamePort, rconPort };
+    });
+    return txn(serverId);
+  }
+
+  /**
+   * Swap one of a server's ports for the next free one, skipping `blocked`.
+   * Returns the new port.
+   *
+   * Used when the host refuses a binding we believed was free — releasing and
+   * re-claiming in one transaction so the old port goes back into the pool only
+   * if a replacement is actually available.
+   */
+  reallocate(serverId: string, kind: PortKind, blocked?: ReadonlySet<number>): number {
+    const txn = this.db.transaction((sid: string) => {
+      // Drop the claim first so the pool sees it as free — the new port can never
+      // be the old one, because the caller always blocks what just failed. If no
+      // replacement exists, the throw rolls the whole transaction back and the
+      // server keeps the port it had rather than ending up holding none.
+      this.db
+        .prepare('DELETE FROM port_allocations WHERE kind = ? AND server_id = ?')
+        .run(kind, sid);
+      const port = this.nextFree(kind, blocked);
+      this.claim(kind, port, sid);
+      return port;
     });
     return txn(serverId);
   }
