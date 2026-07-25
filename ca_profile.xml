@@ -3,7 +3,7 @@
   <Profile>
 Self-hosted tooling for running Factorio dedicated servers.
 
-**Factorio Tools Manager** runs many Factorio servers on one host from a single web
+**Factorio Stack Manager** runs many Factorio servers on one host from a single web
 UI — creation wizard with a pre-flight test boot, live RCON console and container
 logs, saves and scheduled backups, mods and shared modpacks, map-generation settings
 with per-planet previews, whitelists, and a per-server Factorio version. Each server
@@ -13,9 +13,9 @@ It can also give every server its own subdomain with no port number to type, usi
 Cloudflare DNS SRV records and a built-in DDNS job — optional, and configured in the
 app rather than in the container template.
 
-Unraid support: https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml
-Existing Unraid issues: https://github.com/BrennanWoodbury/factorio-tools-manager/issues?q=is%3Aissue%20label%3Aunraid
+Unraid support: https://github.com/BrennanWoodbury/factorio-stack-manager/issues/new?template=unraid-support.yml
+Existing Unraid issues: https://github.com/BrennanWoodbury/factorio-stack-manager/issues?q=is%3Aissue%20label%3Aunraid
   </Profile>
-  <Icon>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/icon.png</Icon>
-  <WebPage>https://github.com/BrennanWoodbury/factorio-tools-manager</WebPage>
+  <Icon>https://raw.githubusercontent.com/BrennanWoodbury/factorio-stack-manager/main/icon.png</Icon>
+  <WebPage>https://github.com/BrennanWoodbury/factorio-stack-manager</WebPage>
 </CommunityApplications>

@@ -9,6 +9,10 @@ import { sanitizeName } from '../services/serverFiles.js';
 import { serverFiles } from '../services/serverFiles.js';
 import { getFactorioAccount, factorioAccountConfigured } from '../services/factorioAccount.js';
 import { getGlobalDefaults } from '../services/globalDefaults.js';
+import { getLogger } from '../lib/logger.js';
+
+const createLog = getLogger('create');
+const finalizeLog = getLogger('finalize');
 
 const modEntrySchema = z.object({ name: z.string().min(1), enabled: z.boolean() });
 
@@ -151,7 +155,7 @@ export function serversRouter(ctx: AppContext): Router {
         try {
           await ctx.modpacks.apply(defaults.modpackId, row.id);
         } catch (err) {
-          console.warn(`[create] default modpack apply failed for ${row.id}: ${(err as Error).message}`);
+          createLog.warn(`default modpack apply failed for ${row.id}: ${(err as Error).message}`);
         }
       }
       res.status(201).json({ server: dtoOf(row) });
@@ -225,7 +229,7 @@ export function serversRouter(ctx: AppContext): Router {
         try {
           await ctx.modpacks.apply(defaults.modpackId, row.id);
         } catch (err) {
-          console.warn(`[finalize] default modpack apply failed for ${row.id}: ${(err as Error).message}`);
+          finalizeLog.warn(`default modpack apply failed for ${row.id}: ${(err as Error).message}`);
         }
       }
       let started = false;
@@ -234,7 +238,7 @@ export function serversRouter(ctx: AppContext): Router {
           await manager.start(row.id);
           started = true;
         } catch (err) {
-          console.warn(`[finalize] auto-start failed for ${row.id}: ${(err as Error).message}`);
+          finalizeLog.warn(`auto-start failed for ${row.id}: ${(err as Error).message}`);
         }
       }
       res.status(201).json({ server: dtoOf(manager.get(row.id)), started });

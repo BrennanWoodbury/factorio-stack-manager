@@ -6,7 +6,7 @@
 # alternative, which fixes every device on the LAN instead of just this one.
 #
 # Usage: sudo ./add-host-entry.sh <host-record> <lan-ip>
-#   sudo ./add-host-entry.sh factorio-tools-manager.mydomain.com 192.168.1.50
+#   sudo ./add-host-entry.sh factorio-stack-manager.mydomain.com 192.168.1.50
 #
 # Safe to re-run: it replaces its own previously-added block instead of
 # duplicating it. Re-run it if the host's LAN IP changes - this does not
@@ -37,10 +37,17 @@ if [[ ! -w "$hosts_file" ]]; then
   exit 1
 fi
 
-marker_begin="# BEGIN factorio-tools-manager (${host_record})"
-marker_end="# END factorio-tools-manager (${host_record})"
+marker_begin="# BEGIN factorio-stack-manager (${host_record})"
+marker_end="# END factorio-stack-manager (${host_record})"
+# Pre-rebrand marker: recognized so a re-run of this (updated) script still finds
+# and replaces a block an older version of it wrote, instead of leaving that one
+# behind and duplicating the entry. Never written going forward.
+legacy_marker_begin="# BEGIN factorio-tools-manager (${host_record})"
+legacy_marker_end="# END factorio-tools-manager (${host_record})"
 
-if grep -Fq "$host_record" "$hosts_file" && ! grep -Fq "$marker_begin" "$hosts_file"; then
+if grep -Fq "$host_record" "$hosts_file" \
+  && ! grep -Fq "$marker_begin" "$hosts_file" \
+  && ! grep -Fq "$legacy_marker_begin" "$hosts_file"; then
   echo "warning: $host_record already appears in $hosts_file outside this script's managed block." >&2
   echo "         The first matching line wins, so check for conflicts if the override doesn't take effect." >&2
 fi
@@ -49,9 +56,10 @@ filtered="$(mktemp)"
 final="$(mktemp)"
 trap 'rm -f "$filtered" "$final"' EXIT
 
-awk -v begin="$marker_begin" -v end="$marker_end" '
-  $0 == begin { skipping = 1; next }
-  $0 == end   { skipping = 0; next }
+awk -v begin="$marker_begin" -v end="$marker_end" \
+    -v legacyBegin="$legacy_marker_begin" -v legacyEnd="$legacy_marker_end" '
+  $0 == begin || $0 == legacyBegin { skipping = 1; next }
+  $0 == end   || $0 == legacyEnd   { skipping = 0; next }
   !skipping   { print }
 ' "$hosts_file" > "$filtered"
 

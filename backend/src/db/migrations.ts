@@ -1,4 +1,7 @@
 import type { DB } from './index.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('db');
 
 /**
  * Incremental schema migrations, gated by SQLite's `PRAGMA user_version`.
@@ -284,8 +287,8 @@ export function runMigrations(
     if (floor > LATEST_SCHEMA_VERSION) {
       throw new SchemaTooNewError(current, LATEST_SCHEMA_VERSION, floor);
     }
-    console.warn(
-      `[db] database is at schema v${current}, newer than this build's v${LATEST_SCHEMA_VERSION}, ` +
+    log.warn(
+      `database is at schema v${current}, newer than this build's v${LATEST_SCHEMA_VERSION}, ` +
         'but every change since is backward compatible — continuing.',
     );
     return;
@@ -305,8 +308,6 @@ export function runMigrations(
       db.exec(`PRAGMA user_version = ${m.version}`);
       if (!m.backwardCompatible) writeCompatibilityFloor(db, m.version);
     })();
-    console.log(
-      `[db] applied migration v${m.version}${m.backwardCompatible ? '' : ' (one-way)'}`,
-    );
+    log.info(`applied migration v${m.version}${m.backwardCompatible ? '' : ' (one-way)'}`);
   }
 }

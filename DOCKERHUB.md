@@ -1,4 +1,4 @@
-# Factorio Multi-Server Manager
+# Factorio Stack Manager
 
 Run and manage **multiple Factorio dedicated servers** on one Docker host from a
 single web interface. Each game server runs as its own sibling container, so it
@@ -15,10 +15,10 @@ The manager includes:
 - Optional Cloudflare DNS SRV records and DDNS for per-server hostnames
 - Automatic database snapshots before migrations
 
-[Source and full documentation](https://github.com/BrennanWoodbury/factorio-tools-manager) ·
-[Upgrade and rollback guide](https://github.com/BrennanWoodbury/factorio-tools-manager/blob/main/UPGRADING.md) ·
-[Changelog](https://github.com/BrennanWoodbury/factorio-tools-manager/blob/main/CHANGELOG.md) ·
-[Issues and support](https://github.com/BrennanWoodbury/factorio-tools-manager/issues)
+[Source and full documentation](https://github.com/BrennanWoodbury/factorio-stack-manager) ·
+[Upgrade and rollback guide](https://github.com/BrennanWoodbury/factorio-stack-manager/blob/main/UPGRADING.md) ·
+[Changelog](https://github.com/BrennanWoodbury/factorio-stack-manager/blob/main/CHANGELOG.md) ·
+[Issues and support](https://github.com/BrennanWoodbury/factorio-stack-manager/issues)
 
 ## Quick start with Docker Compose
 
@@ -27,8 +27,8 @@ Create `compose.yml`:
 ```yaml
 services:
   manager:
-    image: brennanwoodbury/factorio-manager:latest
-    container_name: factorio-manager
+    image: brennanwoodbury/factorio-stack-manager:latest
+    container_name: factorio-stack-manager
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -88,14 +88,14 @@ An Unraid Community Applications template is maintained with the project. Until
 the app is listed in Community Applications, use the raw template URL:
 
 ```text
-https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/templates/factorio-tools-manager.xml
+https://raw.githubusercontent.com/BrennanWoodbury/factorio-stack-manager/main/templates/factorio-stack-manager.xml
 ```
 
 In Unraid, set **Admin Password** and make **Game Port Range** match the UDP range
 forwarded on your router. The remaining fields have usable defaults.
 
 For Unraid-specific help, open the
-[Unraid support form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml).
+[Unraid support form](https://github.com/BrennanWoodbury/factorio-stack-manager/issues/new?template=unraid-support.yml).
 Reports are tracked in this project with the `unraid` label.
 
 ## Image tags
@@ -110,7 +110,7 @@ Reports are tracked in this project with the `unraid` label.
 | `main-<sha>` | A specific development build |
 
 For a stable installation, use `latest` or a numbered release tag. Read the
-[upgrade guide](https://github.com/BrennanWoodbury/factorio-tools-manager/blob/main/UPGRADING.md)
+[upgrade guide](https://github.com/BrennanWoodbury/factorio-stack-manager/blob/main/UPGRADING.md)
 before changing major versions. To roll back, select the exact version tag you
 want and recreate the manager container.
 
@@ -158,4 +158,4 @@ host. Treat access to the manager web interface as host-level access:
 
 ## License
 
-[MIT](https://github.com/BrennanWoodbury/factorio-tools-manager/blob/main/LICENSE)
+[MIT](https://github.com/BrennanWoodbury/factorio-stack-manager/blob/main/LICENSE)

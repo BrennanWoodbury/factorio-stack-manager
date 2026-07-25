@@ -109,7 +109,7 @@ jobs:
     # (release.yml), so merging can no longer reach the users tracking `latest`
     # through the Unraid template.
     # Gated on the Docker Hub target being configured (repository variable
-    # DOCKERHUB_IMAGE, e.g. "youruser/factorio-tools-manager") so a fork stays green.
+    # DOCKERHUB_IMAGE, e.g. "youruser/factorio-stack-manager") so a fork stays green.
     if: github.event_name == 'push' && vars.DOCKERHUB_IMAGE != ''
     runs-on: ubuntu-latest
     steps:

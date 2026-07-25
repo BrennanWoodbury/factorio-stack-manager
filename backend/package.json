@@ -1,5 +1,5 @@
 {
-  "name": "factorio-manager-backend",
+  "name": "factorio-stack-manager-backend",
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
@@ -20,6 +20,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "rcon-client": "^4.2.5",
+    "winston": "^3.19.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

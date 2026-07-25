@@ -1,5 +1,5 @@
 name: Bug report
-description: Report reproducible incorrect behavior in Factorio Tools Manager
+description: Report reproducible incorrect behavior in Factorio Stack Manager
 title: "[Bug]: "
 labels:
   - bug
@@ -9,7 +9,7 @@ body:
       value: |
         Thanks for reporting a bug. Search existing issues first, and never include passwords, API tokens, session secrets, or other credentials.
 
-        For installation, container-host, permissions, networking, or other Unraid-specific problems, use the [Unraid support form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml) instead.
+        For installation, container-host, permissions, networking, or other Unraid-specific problems, use the [Unraid support form](https://github.com/BrennanWoodbury/factorio-stack-manager/issues/new?template=unraid-support.yml) instead.
 
   - type: dropdown
     id: area

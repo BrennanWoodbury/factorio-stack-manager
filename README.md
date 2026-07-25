@@ -1,4 +1,4 @@
-# Factorio Multi-Server Manager
+# Factorio Stack Manager
 
 Self-hosted web app to run **many Factorio dedicated servers on one home host** behind a
 consumer NAT router. Each server is reachable by players at its own subdomain
@@ -12,7 +12,7 @@ routing is done entirely by DNS **SRV records**.
 
 Already running it? [UPGRADING.md](UPGRADING.md) covers which image tag to track, how to roll
 back, and what will and won't change under you. Published changes are listed in
-[GitHub Releases](https://github.com/BrennanWoodbury/factorio-tools-manager/releases), with
+[GitHub Releases](https://github.com/BrennanWoodbury/factorio-stack-manager/releases), with
 [CHANGELOG.md](CHANGELOG.md) retained for optional curated history.
 Project stewardship and review requirements are documented in [MAINTAINERS.md](MAINTAINERS.md).
 
@@ -75,7 +75,7 @@ Skip this to run without DNS (players connect by `IP:port`). To enable automatic
 open the dashboard → **DNS / Cloudflare settings** and enter your server domain, Zone ID and API
 token. The server domain may be the selected zone (`example.com`) or a namespace beneath it
 (`games.example.com`). The shared DDNS target is generated as
-`factorio-tools-manager.<server-domain>`; each instance remains reachable at
+`factorio-stack-manager.<server-domain>`; each instance remains reachable at
 `<instance>.<server-domain>`. **Test configuration** validates the unsaved values, resolves the
 read-only zone name from the Zone ID, and checks for a conflicting CNAME without changing DNS;
 **Save & enable DNS** then stores them in the app database and takes effect immediately — no restart,
@@ -107,7 +107,7 @@ Open `http://<host>:8080` and log in with `ADMIN_PASSWORD`.
 
 The published image is a **single container** — API and web UI in one — so it installs
 like any other Unraid app. A template lives at
-[`templates/factorio-tools-manager.xml`](templates/factorio-tools-manager.xml).
+[`templates/factorio-stack-manager.xml`](templates/factorio-stack-manager.xml).
 
 Until it's listed in Community Applications, install it by hand: **Docker → Add Container →
 Template → paste the raw template URL**, or drop the XML into
@@ -134,12 +134,13 @@ that's expected; manage them from this app. They also survive a manager update, 
 running if you remove the manager (`STOP_SERVERS_ON_SHUTDOWN` changes that).
 
 For Unraid-specific installation or runtime help, use the
-[Unraid support form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml).
+[Unraid support form](https://github.com/BrennanWoodbury/factorio-stack-manager/issues/new?template=unraid-support.yml).
 It applies the `unraid` label automatically so reports remain searchable in this repository.
 
 > **Data location.** Persistent data (SQLite DB + per-server saves/mods/config) is stored at
-> `/opt/factorio-tools-manager`. Override with `FTM_DATA_DIR` (e.g.
-> `FTM_DATA_DIR=$HOME/.factorio-tools-manager`).
+> `/opt/factorio-tools-manager`. Override with `FSM_DATA_DIR` (e.g.
+> `FSM_DATA_DIR=$HOME/.factorio-stack-manager`). `FTM_DATA_DIR`, its pre-rebrand name, is still
+> honored if `FSM_DATA_DIR` is unset — an existing install's `.env` needs no changes.
 >
 > The compose file bind-mounts it at the *same* path inside and outside the container. That's
 > tidy but no longer required: the manager reads its own mount table at startup to learn the
@@ -157,8 +158,9 @@ It applies the `unraid` label automatically so reports remain searchable in this
 | `ADMIN_PASSWORD`        | ✅       | —                              | Web UI login password |
 | `WEB_PORT`              |          | `8080` (prod) / `5173` (dev)   | Host port for the web UI; `API_PORT` (dev only) for the backend |
 | `JWT_SECRET`            |          | derived                        | Signs session cookies; set your own (`openssl rand -hex 32`) |
-| `FTM_DATA_DIR`          |          | `/opt/factorio-tools-manager`  | Data location; identity-mounted host↔container (prod compose) |
-| `DATA_DIR`              |          | `FTM_DATA_DIR`                 | In-container data path (host-mode dev defaults to `../data`) |
+| `FSM_DATA_DIR`          |          | `/opt/factorio-tools-manager`  | Data location; identity-mounted host↔container (prod compose) |
+| `FTM_DATA_DIR`          |          | `FSM_DATA_DIR`                 | Pre-rebrand name for the same variable; still honored if `FSM_DATA_DIR` is unset |
+| `DATA_DIR`              |          | `FSM_DATA_DIR`                 | In-container data path (host-mode dev defaults to `../data`) |
 | `HOST_SERVERS_DIR`      |          | autodetected                   | Host bind-mount source; detected from the manager's own mounts, only set it to override |
 | `GAME_PORT_RANGE`       |          | `34197-34297`                  | Pre-forwarded UDP game-port pool |
 | `RCON_PORT_RANGE`       |          | `27015-27115`                  | Loopback-only RCON port pool |
@@ -170,6 +172,7 @@ It applies the `unraid` label automatically so reports remain searchable in this
 | `RESUME_SERVERS_ON_STARTUP` |      | `true`                         | On startup, resume servers that were running |
 | `SKIP_DB_BACKUP`        |          | `false`                        | Migrate without snapshotting the DB first (makes the upgrade one-way) |
 | `APP_VERSION`           |          | `dev`                          | Build identity; stamped by CI, shown on the dashboard |
+| `LOG_LEVEL`             |          | `info`                         | winston log level: `error`, `warn`, `info`, `debug`, ... |
 
 > **DNS / Cloudflare is not configured via env** — set the server domain, Zone ID, API token, DDNS
 > interval and IP-check URL in the dashboard (**DNS / Cloudflare settings**). The host record is
@@ -600,7 +603,7 @@ Two fixes, in order of preference:
    pfSense/OPNsense, UniFi, and many ASUS/Merlin routers). Nothing else changes.
 2. **Add one local DNS override for the shared host record.** Because every server's SRV target
    is that same record (shown as *Generated host record* on the DNS settings page, e.g.
-   `factorio-tools-manager.mydomain.com`), a single override fixes every server at once — you
+   `factorio-stack-manager.mydomain.com`), a single override fixes every server at once — you
    don't need one per subdomain. Point it at the host's LAN IP in whatever resolves DNS for your
    network: a Pi-hole/AdGuard Home local entry, a dnsmasq/Unbound override, or your router's own
    DNS server. Depending on what that resolver supports, this might be a plain A-record override,
@@ -614,11 +617,11 @@ Two fixes, in order of preference:
    PowerShell prompt) add/update the entry idempotently — safe to re-run if the LAN IP changes:
 
    ```bash
-   sudo ./scripts/add-host-entry.sh factorio-tools-manager.mydomain.com 192.168.1.50
+   sudo ./scripts/add-host-entry.sh factorio-stack-manager.mydomain.com 192.168.1.50
    ```
 
    ```powershell
-   .\scripts\add-host-entry.ps1 -HostRecord factorio-tools-manager.mydomain.com -LanIp 192.168.1.50
+   .\scripts\add-host-entry.ps1 -HostRecord factorio-stack-manager.mydomain.com -LanIp 192.168.1.50
    ```
 
    Both take the *generated host record* (not the per-server subdomain) and the host's LAN IP.

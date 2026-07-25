@@ -34,6 +34,13 @@ import {
   type CascadeDef,
 } from './globalDefaults.js';
 import { DockerError, DuplicateSubdomainError, NotFoundError, ValidationError } from '../lib/errors.js';
+import { getLogger } from '../lib/logger.js';
+
+const draftLog = getLogger('draft');
+const finalizeLog = getLogger('finalize');
+const managerLog = getLogger('manager');
+const backupLog = getLogger('backup');
+const startupLog = getLogger('startup');
 
 /** Extract the payload our decode/encode scenarios log between FTM_BEGIN…FTM_END. */
 function extractMarker(logs: string): string | undefined {
@@ -386,7 +393,7 @@ export class ServerManager {
       serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db));
       if (input.mods && input.mods.length > 0) serverFiles.writeModList(id, input.mods);
     } catch (err) {
-      console.warn(`[draft] file init failed for ${id}: ${(err as Error).message}`);
+      draftLog.warn(`file init failed for ${id}: ${(err as Error).message}`);
     }
     return this.repo.getById(id)!;
   }
@@ -423,7 +430,7 @@ export class ServerManager {
       try {
         if (row.save_name) serverFiles.deleteSave(id, row.save_name);
       } catch (err) {
-        console.warn(`[draft ${id}] could not drop the tested save: ${(err as Error).message}`);
+        draftLog.warn(`${id}: could not drop the tested save: ${(err as Error).message}`);
       }
       this.repo.update(id, { generate_new_save: 1 } as never);
     }
@@ -443,7 +450,7 @@ export class ServerManager {
         serverFiles.ensureDirs(id);
         serverFiles.writeModList(id, patch.mods);
       } catch (err) {
-        console.warn(`[draft] mod-list write failed for ${id}: ${(err as Error).message}`);
+        draftLog.warn(`mod-list write failed for ${id}: ${(err as Error).message}`);
       }
     }
     this.repo.setDraftState(id, JSON.stringify(next), this.draftExpiry());
@@ -502,7 +509,7 @@ export class ServerManager {
       patch.gameMode = gameModeForSave(header);
     } catch (err) {
       // A save we can't parse is still usable — the probe remains the backstop.
-      console.warn(`[draft ${id}] could not read save header: ${(err as Error).message}`);
+      draftLog.warn(`${id}: could not read save header: ${(err as Error).message}`);
     }
     await this.updateDraft(id, patch);
     return {
@@ -562,7 +569,7 @@ export class ServerManager {
       serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db));
     } catch (err) {
       // Non-fatal: settings are rewritten on start too.
-      console.warn(`[finalize] settings write failed for ${id}: ${(err as Error).message}`);
+      finalizeLog.warn(`settings write failed for ${id}: ${(err as Error).message}`);
     }
 
     // DNS side effect. On failure, roll back to a draft so nothing half-created leaks.
@@ -757,10 +764,10 @@ export class ServerManager {
       try {
         serverFiles.removeAll(id);
       } catch (err) {
-        console.warn(`[draft] dir cleanup failed for ${id}: ${(err as Error).message}`);
+        draftLog.warn(`dir cleanup failed for ${id}: ${(err as Error).message}`);
       }
     }
-    if (ids.length > 0) console.log(`[draft] pruned ${ids.length} expired draft(s)`);
+    if (ids.length > 0) draftLog.info(`pruned ${ids.length} expired draft(s)`);
     return ids.length;
   }
 
@@ -871,15 +878,15 @@ export class ServerManager {
     try {
       running = (await this.docker.status(id)).running;
     } catch (err) {
-      console.warn(`[manager] auto-restart status check failed for ${id}: ${(err as Error).message}`);
+      managerLog.warn(`auto-restart status check failed for ${id}: ${(err as Error).message}`);
       return false;
     }
     if (!running) return false;
-    console.log(`[manager] auto-restarting ${id} to apply config change`);
+    managerLog.info(`auto-restarting ${id} to apply config change`);
     // Fire-and-forget: don't make the settings request wait for the restart. The
     // UI reflects it via status polling.
     void this.restart(id).catch((err) =>
-      console.error(`[manager] auto-restart of ${id} failed: ${(err as Error).message}`),
+      managerLog.error(`auto-restart of ${id} failed: ${(err as Error).message}`),
     );
     return true;
   }
@@ -1168,9 +1175,8 @@ export class ServerManager {
         const conflicts = conflictingHostPorts(err);
         if (conflicts.length === 0 || attempt >= MAX_PORT_ATTEMPTS) throw err;
         for (const port of conflicts) blocked.add(port);
-        console.warn(
-          `[manager] ${id}: host port(s) ${conflicts.join(', ')} taken by something else; ` +
-            'reallocating',
+        managerLog.warn(
+          `${id}: host port(s) ${conflicts.join(', ')} taken by something else; reallocating`,
         );
       }
     }
@@ -1193,7 +1199,7 @@ export class ServerManager {
       try {
         await this.dns.updateServerSrv(this.get(row.id));
       } catch (err) {
-        console.warn(`[manager] ${row.id}: SRV update after port change failed: ${(err as Error).message}`);
+        managerLog.warn(`${row.id}: SRV update after port change failed: ${(err as Error).message}`);
       }
     }
     return port;
@@ -1414,7 +1420,7 @@ export class ServerManager {
         await this.rcon.send(row, '/server-save');
         await new Promise((r) => setTimeout(r, 2500)); // let the save flush to disk
       } catch (err) {
-        console.warn(`[backup] /server-save on ${id} failed: ${(err as Error).message}`);
+        backupLog.warn(`/server-save on ${id} failed: ${(err as Error).message}`);
       }
     }
     const source = saveName ?? serverFiles.latestSaveName(id);
@@ -1455,9 +1461,9 @@ export class ServerManager {
       if (now - last < row.backup_interval_minutes * 60_000) continue;
       try {
         const { name } = await this.backupNow(row.id, undefined, 'auto');
-        console.log(`[backup] auto-backed up ${row.subdomain}: ${name}`);
+        backupLog.info(`auto-backed up ${row.subdomain}: ${name}`);
       } catch (err) {
-        console.warn(`[backup] auto-backup of ${row.id} failed: ${(err as Error).message}`);
+        backupLog.warn(`auto-backup of ${row.id} failed: ${(err as Error).message}`);
       }
     }
   }
@@ -1489,13 +1495,13 @@ export class ServerManager {
       }
     }
     if (toResume.length === 0) return;
-    console.log(`[startup] resuming ${toResume.length} server(s) that were running`);
+    startupLog.info(`resuming ${toResume.length} server(s) that were running`);
     for (const row of toResume) {
       try {
         await this.start(row.id);
-        console.log(`[startup] resumed ${row.subdomain} (${row.id})`);
+        startupLog.info(`resumed ${row.subdomain} (${row.id})`);
       } catch (err) {
-        console.error(`[startup] failed to resume ${row.id}: ${(err as Error).message}`);
+        startupLog.error(`failed to resume ${row.id}: ${(err as Error).message}`);
       }
     }
   }
@@ -1512,13 +1518,13 @@ export class ServerManager {
     try {
       await this.docker.remove(id);
     } catch (err) {
-      console.warn(`[manager] container remove during delete failed: ${(err as Error).message}`);
+      managerLog.warn(`container remove during delete failed: ${(err as Error).message}`);
     }
     // Remove DNS records (best-effort).
     try {
       await this.dns.deleteServerSrv(id);
     } catch (err) {
-      console.warn(`[manager] SRV delete during delete failed: ${(err as Error).message}`);
+      managerLog.warn(`SRV delete during delete failed: ${(err as Error).message}`);
     }
     this.hardDelete(id);
     void row;

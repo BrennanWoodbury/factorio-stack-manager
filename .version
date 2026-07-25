@@ -1,4 +1,4 @@
 # The release major. Change this manually only for a breaking contract, and only
 # one step at a time. Minor and patch are calculated from migrations, runtime
 # changes, and the latest reachable vMAJOR.MINOR.PATCH tag.
-MAJOR=1
+MAJOR=2

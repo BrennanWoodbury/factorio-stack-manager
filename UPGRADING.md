@@ -27,14 +27,14 @@ applying any migration, the manager writes a consistent copy to
 the snapshot can't be written it refuses to migrate rather than proceeding unprotected
 (override with `SKIP_DB_BACKUP=true`, accepting that the upgrade won't be reversible).
 
-Read the [GitHub release notes](https://github.com/BrennanWoodbury/factorio-tools-manager/releases)
+Read the [GitHub release notes](https://github.com/BrennanWoodbury/factorio-stack-manager/releases)
 before a **major** version. Those are the only releases allowed to require anything
 of you, and the steps will be written there.
 
 ## Rolling back
 
 Set the image tag to the version you want — on Unraid, edit the container's Repository
-field to e.g. `brennanwoodbury/factorio-manager:1.4.2` and apply.
+field to e.g. `brennanwoodbury/factorio-stack-manager:1.4.2` and apply.
 
 **Most rollbacks need nothing extra.** Migrations record whether they can be read
 backwards. Almost all of them are additive — they add a column an older build simply

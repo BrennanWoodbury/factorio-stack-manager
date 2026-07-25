@@ -64,5 +64,5 @@ here on, `latest` only moves when a version is tagged.
   rolling back across the additive ones — nearly all of them — just works. The manager
   refuses to start only when a release made a genuinely one-way change.
 
-[Unreleased]: https://github.com/BrennanWoodbury/factorio-tools-manager/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/BrennanWoodbury/factorio-tools-manager/releases/tag/v1.0.0
+[Unreleased]: https://github.com/BrennanWoodbury/factorio-stack-manager/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/BrennanWoodbury/factorio-stack-manager/releases/tag/v1.0.0

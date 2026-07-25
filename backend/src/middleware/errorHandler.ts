@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../lib/errors.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('error');
 
 /** Express async wrapper so route handlers can throw / reject. */
 export function asyncHandler(
@@ -26,7 +29,7 @@ export function errorHandler(
     res.status(err.status).json({ error: { code: err.code, message: err.message } });
     return;
   }
-  console.error('[error] unhandled:', err);
+  log.error(`unhandled: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
   const message = err instanceof Error ? err.message : 'Internal server error';
   res.status(500).json({ error: { code: 'INTERNAL', message } });
 }
