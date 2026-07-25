@@ -12,14 +12,16 @@ import { parseDependencies, type ImageProfile, type ModDependency } from './imag
  *
  *   Failed to load mod "x": Incompatible Factorio version (current: 2.0, required: 1.1)
  *   Failed to load mod "x": Missing required dependency flib >= 0.14.0
+ *   Failed to load mod "x": Dependency depmod >= 2.0.0 is not satisfied (active: depmod 1.0.0)
  *
- * Those two messages are reproduced verbatim below, so what the manager says and
- * what the container log says line up.
+ * Those messages are reproduced verbatim below, so what the manager says and what
+ * the container log says line up.
  *
- * Deliberately NOT checked: dependency version constraints. `flib >= 0.14.0` is
- * satisfied here by flib being present at all, because the download path always
- * takes a mod's latest release — enforcing ranges means solving for a compatible
- * release set, which is a much larger change.
+ * This reports an unsatisfiable mod set; it does not try to fix one. Finding a set
+ * of releases that satisfies every constraint at once means enumerating candidate
+ * releases per mod — each declaring its own dependencies — and backtracking when
+ * ranges disagree. Reporting is what tells a user which pin to change, and is the
+ * whole of the value for a set that is already broken.
  *
  * Like imageProfile, this module has no runtime imports so it stays cheap to test.
  */
@@ -44,6 +46,7 @@ export type ModProblemKind =
   | 'game-version'
   | 'missing-dependency'
   | 'disabled-dependency'
+  | 'dependency-version'
   | 'conflict';
 
 export interface ModProblem {
@@ -62,6 +65,52 @@ export interface ModProblem {
 export function gameSeries(version: string): string {
   const m = /^(\d+)\.(\d+)/.exec(version.trim());
   return m ? `${m[1]}.${m[2]}` : '';
+}
+
+/**
+ * Compare two Factorio versions. They are dot-separated integers, not semver:
+ * compared component by component, with absent components counting as 0, so
+ * "0.14" and "0.14.0" are the same version.
+ */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.trim().split('.');
+  const pb = b.trim().split('.');
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = Number.parseInt(pa[i] ?? '0', 10) || 0;
+    const nb = Number.parseInt(pb[i] ?? '0', 10) || 0;
+    if (na !== nb) return na < nb ? -1 : 1;
+  }
+  return 0;
+}
+
+/** `>=`, `>`, `=`, `<=` or `<` followed by a version. Factorio allows only one. */
+const CONSTRAINT_RE = /^(>=|<=|=|>|<)\s*([\d.]+)$/;
+
+/**
+ * Whether `version` satisfies a constraint written as the mod author wrote it
+ * ("&gt;= 0.14.0").
+ *
+ * An unparseable or absent constraint counts as satisfied. Inventing a failure
+ * from something we simply didn't understand would block a start that the game
+ * would have allowed, which is worse than missing one it wouldn't.
+ */
+export function satisfiesConstraint(version: string, constraint?: string): boolean {
+  if (!constraint) return true;
+  const m = CONSTRAINT_RE.exec(constraint.trim());
+  if (!m) return true;
+  const cmp = compareVersions(version, m[2]);
+  switch (m[1]) {
+    case '>=':
+      return cmp >= 0;
+    case '>':
+      return cmp > 0;
+    case '=':
+      return cmp === 0;
+    case '<=':
+      return cmp <= 0;
+    default:
+      return cmp < 0;
+  }
 }
 
 /** Read an installed mod's manifest out of a parsed info.json. */
@@ -145,6 +194,18 @@ export function validateModSet(
           mod: entry.name,
           detail: `Requires ${named}, which is installed but disabled.`,
         });
+      } else {
+        // Only meaningful once the dependency is present and on: the game reports
+        // an unsatisfied constraint separately from a missing mod, and it is just
+        // as fatal.
+        const active = byName.get(dep.name)?.version ?? bundled.get(dep.name)?.version;
+        if (active && !satisfiesConstraint(active, dep.constraint)) {
+          problems.push({
+            kind: 'dependency-version',
+            mod: entry.name,
+            detail: `Dependency ${named} is not satisfied (active: ${dep.name} ${active}).`,
+          });
+        }
       }
     }
   }
