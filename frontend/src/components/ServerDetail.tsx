@@ -58,7 +58,7 @@ export function ServerDetail({ id, onBack }: { id: string; onBack: () => void })
           <div>
             <div className="row" style={{ alignItems: 'center' }}>
               <h2 style={{ margin: 0 }}>{server.name}</h2>
-              <StatusBadge running={running} />
+              <StatusBadge status={status?.status ?? server.status} />
             </div>
             <div className="small muted mono" style={{ marginTop: 4 }}>
               {server.connectHost ? (

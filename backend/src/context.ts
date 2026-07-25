@@ -11,6 +11,7 @@ import { DnsService } from './services/dnsService.js';
 import { RconService } from './services/rconService.js';
 import { ServerManager } from './services/serverManager.js';
 import { ModService } from './services/modService.js';
+import { ImageProfileService } from './services/imageProfile.js';
 import { DdnsJob } from './jobs/ddns.js';
 import { BackupJob } from './jobs/backup.js';
 import { DraftPruneJob } from './jobs/draftPrune.js';
@@ -40,11 +41,13 @@ export function buildContext(config: AppConfig): AppContext {
   const docker = new DockerService(config);
   const dns = new DnsService(db);
   const rcon = new RconService(config);
-  const mods = new ModService(db);
+  // Shared so mod downloads and the lifecycle agree on what the image ships.
+  const imageProfiles = new ImageProfileService(docker);
+  const mods = new ModService(db, imageProfiles);
   const modpacksRepo = new ModpacksRepo(db);
   const modpacks = new ModpackService(modpacksRepo, repo, mods);
   const mapGenTemplates = new MapGenTemplateService(new MapGenTemplatesRepo(db), repo);
-  const manager = new ServerManager(db, repo, allocator, docker, dns, rcon, config);
+  const manager = new ServerManager(db, repo, allocator, docker, dns, rcon, config, mods, imageProfiles);
   const ddns = new DdnsJob(dns);
   const backups = new BackupJob(manager);
   const draftPrune = new DraftPruneJob(manager);

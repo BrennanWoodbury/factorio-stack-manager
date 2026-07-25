@@ -30,6 +30,23 @@ export interface ContainerStatus {
   running: boolean;
   startedAt?: string;
   state?: string;
+  /** Exit code of the last run — meaningful only once it has exited at least once. */
+  exitCode?: number;
+  /** How many times the restart policy has restarted it. Non-zero means it died. */
+  restartCount?: number;
+}
+
+/**
+ * The stored status for a container state.
+ *
+ * `crashed` exists because Docker reports `restarting` only while it waits out the
+ * backoff between crashes: a server dying on startup would otherwise read as plain
+ * `stopped`, the one status that suggests nothing is wrong. Shared with the startup
+ * reconcile so a crash loop isn't relabelled `stopped` when the manager restarts.
+ */
+export function containerStatusLabel(cs: ContainerStatus): string {
+  if (cs.state === 'restarting') return 'crashed';
+  return cs.running ? 'running' : 'stopped';
 }
 
 /**
@@ -605,6 +622,8 @@ export class DockerService {
         running: info.State.Running === true,
         startedAt: info.State.StartedAt,
         state: info.State.Status,
+        exitCode: info.State.ExitCode,
+        restartCount: info.RestartCount,
       };
     } catch (err) {
       const e = err as { statusCode?: number };

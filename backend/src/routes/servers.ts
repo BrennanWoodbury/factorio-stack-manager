@@ -688,7 +688,29 @@ export function serversRouter(ctx: AppContext): Router {
       const body = parse(z.object({ mods: z.array(modEntrySchema) }), req.body);
       const result = await mods.applyModList(row, body.mods);
       await manager.maybeAutoRestart(row.id, true);
-      res.json({ mods: mods.getModList(row.id), ...result });
+      // Reported here rather than only at start: this is where the user is standing
+      // when they create the problem, and start() refuses on the same list.
+      res.json({ mods: mods.getModList(row.id), ...result, problems: await modProblems(row.id) });
+    }),
+  );
+
+  /**
+   * Same check `start` enforces. Never fails the request — an image that isn't
+   * pulled yet can't be inspected, and that is not a reason to break the mods UI.
+   */
+  const modProblems = async (id: string) => {
+    try {
+      return await manager.modProblems(id);
+    } catch {
+      return [];
+    }
+  };
+
+  r.get(
+    '/:id/mods/problems',
+    asyncHandler(async (req, res) => {
+      const row = manager.get(req.params.id);
+      res.json({ problems: await modProblems(row.id) });
     }),
   );
 

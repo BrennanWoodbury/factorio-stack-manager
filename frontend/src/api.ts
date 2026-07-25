@@ -15,6 +15,7 @@ import type {
   MapGenTemplate,
   MapGenTemplateDetail,
   ModEntry,
+  ModProblem,
   Modpack,
   ModpackDetail,
   ModpackMod,
@@ -223,7 +224,11 @@ export const api = {
       mods: ModEntry[];
       downloaded: { name: string; version: string }[];
       errors: { name: string; error: string }[];
+      problems: ModProblem[];
     }>('PUT', `/servers/${id}/mods`, { mods }),
+
+  getModProblems: (id: string) =>
+    req<{ problems: ModProblem[] }>('GET', `/servers/${id}/mods/problems`),
 
   searchMods: (q: string, limit = 25) =>
     req<{ results: CatalogEntry[] }>('GET', `/mods/search?q=${encodeURIComponent(q)}&limit=${limit}`),

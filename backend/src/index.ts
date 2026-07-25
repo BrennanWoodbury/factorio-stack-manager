@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { config, getHostServersDir, setHostServersDir } from './config.js';
 import { buildContext } from './context.js';
+import { containerStatusLabel } from './services/dockerService.js';
 import { kvGet, kvSet } from './db/index.js';
 import { getFactorioAccount, setFactorioAccount } from './services/factorioAccount.js';
 import { authRouter } from './routes/auth.js';
@@ -27,7 +28,7 @@ async function main() {
   try {
     for (const row of ctx.repo.list()) {
       const cs = await ctx.docker.status(row.id);
-      const status = cs.running ? 'running' : 'stopped';
+      const status = containerStatusLabel(cs);
       if (row.status !== status) ctx.repo.setStatus(row.id, status);
     }
   } catch (err) {

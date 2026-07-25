@@ -26,6 +26,8 @@ interface FakeMod {
   deps?: string[];
   /** Present in the listing but 404s on /full — an unlisted or withdrawn mod. */
   noDetail?: boolean;
+  /** Portal releases oldest-first, as `[version, factorio_version]` pairs. */
+  releases?: [string, string | undefined][];
 }
 
 interface Portal {
@@ -61,6 +63,19 @@ function harness(portal: Portal): Harness {
           latest_release: { version: '1.0.0', info_json: { factorio_version: '2.0' } },
         })),
       });
+    }
+    const short = /\/api\/mods\/([^/]+)$/.exec(url);
+    if (short) {
+      const name = decodeURIComponent(short[1]);
+      const mod = portal[name];
+      if (!mod) return json(404, {});
+      const releases = (mod.releases ?? [['1.0.0', '2.0']]).map(([version, fv]) => ({
+        version,
+        download_url: `/download/${name}/${version}`,
+        file_name: `${name}_${version}.zip`,
+        info_json: fv === undefined ? {} : { factorio_version: fv },
+      }));
+      return json(200, { name, releases });
     }
     const full = /\/api\/mods\/([^/]+)\/full$/.exec(url);
     if (full) {
@@ -373,6 +388,75 @@ test('a pathological graph is truncated instead of walked forever', async () => 
     assert.equal(r.truncated, true);
     assert.ok(r.required.length <= 150, 'the walk stopped short of the whole chain');
     assert.ok(h.calls.full.length < 150, 'and stopped requesting');
+  } finally {
+    h.restore();
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * Release selection
+ * ------------------------------------------------------------------ */
+
+const RELEASES: Portal = {
+  // Kept current: has a build for each series.
+  maintained: { releases: [['1.0.0', '1.1'], ['2.0.0', '2.0'], ['3.0.0', '2.1']] },
+  // Abandoned before 2.0 — its newest release is the wrong one to install.
+  abandoned: { releases: [['0.9.0', '1.1'], ['1.0.0', '1.1']] },
+  // Moved on to 2.1, so a 2.0 server must not take the newest either.
+  ahead: { releases: [['1.0.0', '2.0'], ['2.0.0', '2.1']] },
+  // Ancient mod with no declared version in its release manifest.
+  undeclared: { releases: [['1.0.0', undefined]] },
+};
+
+test('the newest release for the server\'s Factorio series is chosen, not the newest overall', async () => {
+  const h = harness(RELEASES);
+  try {
+    assert.equal((await h.mods.latestRelease('maintained', '2.0')).version, '2.0.0');
+    assert.equal((await h.mods.latestRelease('maintained', '2.1')).version, '3.0.0');
+    assert.equal((await h.mods.latestRelease('ahead', '2.0')).version, '1.0.0');
+    assert.equal(
+      (await h.mods.latestRelease('maintained')).version,
+      '3.0.0',
+      'with no series known, behaviour is unchanged',
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test('a mod with nothing built for this Factorio is refused, naming both versions', async () => {
+  const h = harness(RELEASES);
+  try {
+    await assert.rejects(
+      () => h.mods.latestRelease('abandoned', '2.0'),
+      /no release for Factorio 2\.0 \(newest is 1\.0\.0 for 1\.1\)/,
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test('a release that declares no Factorio version is taken as usable', async () => {
+  const h = harness(RELEASES);
+  try {
+    assert.equal((await h.mods.latestRelease('undeclared', '2.0')).version, '1.0.0');
+  } finally {
+    h.restore();
+  }
+});
+
+test('a pin to a release built for another Factorio is refused, not honoured', async () => {
+  const h = harness(RELEASES);
+  try {
+    assert.equal((await h.mods.getRelease('maintained', '2.0.0', '2.0')).version, '2.0.0');
+    await assert.rejects(
+      () => h.mods.getRelease('maintained', '1.0.0', '2.0'),
+      /pinned to 1\.0\.0, which is built for Factorio 1\.1, not 2\.0/,
+    );
+    await assert.rejects(
+      () => h.mods.getRelease('maintained', '9.9.9', '2.0'),
+      /has no release 9\.9\.9/,
+    );
   } finally {
     h.restore();
   }
