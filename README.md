@@ -1,4 +1,4 @@
-# Factorio Multi-Server Manager
+# Factorio Stack Manager
 
 Self-hosted web app to run **many Factorio dedicated servers on one home host** behind a
 consumer NAT router. Each server is reachable by players at its own subdomain

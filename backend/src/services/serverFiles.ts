@@ -75,7 +75,7 @@ export class ServerFilesService {
   /** Advanced server-settings defaults (everything except the managed keys). */
   defaultAdvancedSettings(): Record<string, unknown> {
     return {
-      tags: ['factorio-manager'],
+      tags: ['factorio-stack-manager'],
       visibility: { public: false, lan: true },
       require_user_verification: true,
       max_upload_in_kilobytes_per_second: 0,

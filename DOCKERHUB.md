@@ -1,4 +1,4 @@
-# Factorio Multi-Server Manager
+# Factorio Stack Manager
 
 Run and manage **multiple Factorio dedicated servers** on one Docker host from a
 single web interface. Each game server runs as its own sibling container, so it
