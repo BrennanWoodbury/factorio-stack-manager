@@ -4,6 +4,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  authorizedReleaseBypass,
   currentApprovers,
   evaluateGovernance,
   parseMaintainers,
@@ -103,6 +104,46 @@ test('case-insensitive handles count, while duplicate, stale, and self approvals
   assert.deepEqual(
     currentApprovers({ reviews, trustedMaintainers, author: 'BRENNANWOODBURY', headSha }),
     [],
+  );
+});
+
+test('release bypass accepts a CODEOWNER or repository admin', () => {
+  assert.deepEqual(
+    authorizedReleaseBypass({
+      actor: 'BRENNANWOODBURY',
+      trustedMaintainers,
+      repositoryPermission: 'write',
+    }),
+    { authorized: true, reason: 'CODEOWNER' },
+  );
+  assert.deepEqual(
+    authorizedReleaseBypass({
+      actor: 'outside-admin',
+      trustedMaintainers,
+      repositoryPermission: 'admin',
+    }),
+    { authorized: true, reason: 'repository admin' },
+  );
+});
+
+test('release bypass rejects non-CODEOWNER collaborators below admin', () => {
+  for (const repositoryPermission of ['', 'read', 'triage', 'write', 'maintain']) {
+    assert.deepEqual(
+      authorizedReleaseBypass({
+        actor: 'contributor',
+        trustedMaintainers,
+        repositoryPermission,
+      }),
+      { authorized: false },
+    );
+  }
+  assert.deepEqual(
+    authorizedReleaseBypass({
+      actor: '',
+      trustedMaintainers,
+      repositoryPermission: 'admin',
+    }),
+    { authorized: false },
   );
 });
 

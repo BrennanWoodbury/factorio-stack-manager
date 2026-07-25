@@ -19,7 +19,7 @@ test('the release coordinator is main-merge driven, serialized, and manually rec
 
 test('validation finishes before the first tag or publication mutation', () => {
   const policy = workflow.indexOf('name: Recalculate version policy');
-  const approval = workflow.indexOf('name: Require a verified non-author maintainer approval');
+  const approval = workflow.indexOf('name: Require approval or authorized merge bypass');
   const backend = workflow.indexOf('name: Backend regression tests');
   const frontend = workflow.indexOf('name: Frontend regression tests');
   const template = workflow.indexOf('name: Validate Unraid template');
@@ -28,6 +28,14 @@ test('validation finishes before the first tag or publication mutation', () => {
   const release = workflow.indexOf('name: Create generated GitHub release notes if needed');
   assert.ok(policy < approval && approval < backend && backend < frontend && frontend < template && template < tag);
   assert.ok(tag < docker && docker < release);
+});
+
+test('release approval permits only an authenticated CODEOWNER or admin merge bypass', () => {
+  assert.match(workflow, /github\.rest\.pulls\.get/);
+  assert.match(workflow, /core\.setOutput\('merged_by', pull\?\.merged_by\?\.login \|\| ''\)/);
+  assert.match(workflow, /getCollaboratorPermissionLevel/);
+  assert.match(workflow, /authorizedReleaseBypass/);
+  assert.match(workflow, /current non-author maintainer approval or a merge by a CODEOWNER\/repository admin/);
 });
 
 test('non-release and invalid-policy paths precede every artifact action', () => {
