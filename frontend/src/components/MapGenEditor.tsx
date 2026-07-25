@@ -151,15 +151,22 @@ const PLANETS: Planet[] = [
   },
 ];
 
+/** Any mode whose mod set — a modpack, or an uploaded save — owns the mod list. */
+export function isModdedMode(mode: string): boolean {
+  return mode.startsWith('modded');
+}
+
 function planetsForMode(mode: string): Planet[] {
-  if (mode === 'vanilla') return PLANETS.filter((p) => p.key === 'nauvis');
-  return PLANETS; // space_age + space_age_no_quality — same planets
+  if (mode === 'vanilla' || mode === 'modded_vanilla') {
+    return PLANETS.filter((p) => p.key === 'nauvis');
+  }
+  return PLANETS; // space_age (+ no-quality, + modded) — same planets
 }
 
 /**
  * Planets that can be previewed for a mode: Nauvis for vanilla, all Space Age planets
- * for SA. Modded packs are Nauvis-only (we can't know a pack's surfaces), matching
- * "Vanilla + Space Age at least".
+ * for SA and for mods sitting on top of it. A bare "Modded" is Nauvis-only, because
+ * without a named base we can't know a pack's surfaces.
  */
 export function previewPlanetsForMode(mode: string): { key: string; label: string }[] {
   if (mode === 'modded') return [{ key: 'nauvis', label: 'Nauvis' }];
