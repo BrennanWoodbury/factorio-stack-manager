@@ -1,0 +1,67 @@
+name: Feature request
+description: Suggest a new capability or improvement for Factorio Tools Manager
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Search existing issues first so related ideas and discussion can stay together.
+
+        If an existing feature is behaving incorrectly, use the [bug report form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=bug-report.yml) instead.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Dashboard or user interface
+        - Server creation or import
+        - Server lifecycle and monitoring
+        - Saves or backups
+        - Mods or Factorio authentication
+        - Server configuration
+        - Cloudflare DNS or DDNS
+        - Unraid integration
+        - API or automation
+        - Documentation
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What are you trying to accomplish, and what makes it difficult today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe what you would like Factorio Tools Manager to do. Focus on the user experience; an implementation design is optional.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: How do you handle this today? Include other approaches you considered, if any.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add examples, sketches, links, screenshots, or other details that clarify the request.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission check
+      options:
+        - label: I searched existing issues for the same or a closely related request.
+          required: true
