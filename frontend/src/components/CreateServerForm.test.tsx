@@ -178,3 +178,80 @@ describe('CreateServerForm: Test button', () => {
     expect(screen.getByRole('button', { name: 'Create server' }).hasAttribute('disabled')).toBe(true);
   });
 });
+
+describe('CreateServerForm: mods not applied on create', () => {
+  // The gap this closes: mods added in the wizard only ever get downloaded when
+  // "Save & download" is pressed. Clicking Create straight after adding a mod used to
+  // finalize the draft with whatever mod list it already had, silently dropping the
+  // addition (or falling back to a default modpack) instead of asking first.
+  test('adding a mod without saving it prompts before creating, and applies it on confirm', async () => {
+    apiMocks.resolveModDependencies.mockResolvedValue({
+      required: [],
+      optional: [],
+      missing: [],
+      incompatible: [],
+    });
+    apiMocks.searchMods.mockResolvedValue({
+      results: [{ name: 'flib', title: 'Flib', owner: 'raiguard', summary: '', downloadsCount: 1000 }],
+    });
+    apiMocks.putMods.mockResolvedValue({
+      mods: [{ name: 'flib', enabled: true }],
+      downloaded: [{ name: 'flib', version: '1.0.0' }],
+      errors: [],
+    });
+    const { onCreated } = renderWizard();
+
+    fireEvent.change(await screen.findByPlaceholderText(/e.g. space exploration/), {
+      target: { value: 'flib' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+    await screen.findByText('flib');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create without testing' }));
+
+    expect(await screen.findByText('Mods not applied')).toBeTruthy();
+    expect(apiMocks.finalizeDraft).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply & continue' }));
+
+    await waitFor(() => expect(apiMocks.putMods).toHaveBeenCalledWith('d1', [{ name: 'flib', enabled: true }]));
+    await waitFor(() => expect(apiMocks.finalizeDraft).toHaveBeenCalledWith('d1', false));
+    expect(onCreated).toHaveBeenCalledWith('srv1');
+  });
+
+  test('cancelling the prompt leaves the draft uncreated', async () => {
+    apiMocks.resolveModDependencies.mockResolvedValue({
+      required: [],
+      optional: [],
+      missing: [],
+      incompatible: [],
+    });
+    apiMocks.searchMods.mockResolvedValue({
+      results: [{ name: 'flib', title: 'Flib', owner: 'raiguard', summary: '', downloadsCount: 1000 }],
+    });
+    renderWizard();
+
+    fireEvent.change(await screen.findByPlaceholderText(/e.g. space exploration/), {
+      target: { value: 'flib' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+    await screen.findByText('flib');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create without testing' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    await act(async () => {});
+    expect(apiMocks.putMods).not.toHaveBeenCalled();
+    expect(apiMocks.finalizeDraft).not.toHaveBeenCalled();
+  });
+
+  test('creating without touching mods does not prompt', async () => {
+    const { onCreated } = renderWizard();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Create without testing' }));
+
+    await waitFor(() => expect(apiMocks.finalizeDraft).toHaveBeenCalledWith('d1', false));
+    expect(apiMocks.putMods).not.toHaveBeenCalled();
+    expect(onCreated).toHaveBeenCalledWith('srv1');
+  });
+});
