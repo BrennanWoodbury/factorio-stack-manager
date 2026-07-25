@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { MapGenSettings, MapGenTemplate } from '../types';
-import { run, toastError } from '../ui';
+import { run, toastError, toastSuccess } from '../ui';
 import { ExperimentalNote } from './ExperimentalNote';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -293,6 +293,15 @@ export function MapGenEditor({
   const seedRaw = getPath(value, ['seed']);
   const seed = typeof seedRaw === 'number' ? String(seedRaw) : '';
 
+  const copySeed = async (s: string) => {
+    try {
+      await navigator.clipboard.writeText(s);
+      toastSuccess('Copied seed to clipboard');
+    } catch (err) {
+      toastError((err as Error).message);
+    }
+  };
+
   const applyTemplate = async (id: string) => {
     if (!id) {
       setLoaded(null);
@@ -432,15 +441,25 @@ export function MapGenEditor({
           Peaceful mode (enemies don't attack unless provoked)
         </label>
         <label style={{ marginTop: 14 }}>Map seed (blank = random)</label>
-        <input
-          type="number"
-          value={seed}
-          placeholder="random"
-          onChange={(e) => {
-            const val = e.target.value.trim();
-            onChange(setPath(value, ['seed'], val === '' ? null : Number(val)));
-          }}
-        />
+        <div className="row" style={{ gap: 8 }}>
+          <input
+            type="number"
+            value={seed}
+            placeholder="random"
+            onChange={(e) => {
+              const val = e.target.value.trim();
+              onChange(setPath(value, ['seed'], val === '' ? null : Number(val)));
+            }}
+          />
+          <button
+            type="button"
+            className="small"
+            disabled={!seed}
+            onClick={() => void copySeed(seed)}
+          >
+            Copy seed
+          </button>
+        </div>
       </Group>
     </div>
   );
