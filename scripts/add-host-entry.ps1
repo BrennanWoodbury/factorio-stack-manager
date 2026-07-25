@@ -16,13 +16,13 @@
 
 .PARAMETER HostRecord
   The shared host record shown as "Generated host record" on the DNS settings
-  page, e.g. factorio-tools-manager.mydomain.com
+  page, e.g. factorio-stack-manager.mydomain.com
 
 .PARAMETER LanIp
   The manager host's LAN IP address, e.g. 192.168.1.50
 
 .EXAMPLE
-  .\add-host-entry.ps1 -HostRecord factorio-tools-manager.mydomain.com -LanIp 192.168.1.50
+  .\add-host-entry.ps1 -HostRecord factorio-stack-manager.mydomain.com -LanIp 192.168.1.50
 #>
 [CmdletBinding()]
 param(
@@ -52,20 +52,27 @@ if ($LanIp -notmatch "^$octet\.$octet\.$octet\.$octet$") {
 }
 
 $hostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
-$markerBegin = "# BEGIN factorio-tools-manager ($HostRecord)"
-$markerEnd = "# END factorio-tools-manager ($HostRecord)"
+$markerBegin = "# BEGIN factorio-stack-manager ($HostRecord)"
+$markerEnd = "# END factorio-stack-manager ($HostRecord)"
+# Pre-rebrand marker: recognized so a re-run of this (updated) script still finds
+# and replaces a block an older version of it wrote, instead of leaving that one
+# behind and duplicating the entry. Never written going forward.
+$legacyMarkerBegin = "# BEGIN factorio-tools-manager ($HostRecord)"
+$legacyMarkerEnd = "# END factorio-tools-manager ($HostRecord)"
 
 $lines = @(Get-Content -Path $hostsPath)
 
-if (($lines | Select-String -SimpleMatch $HostRecord) -and -not ($lines -contains $markerBegin)) {
+if (($lines | Select-String -SimpleMatch $HostRecord) -and
+    -not ($lines -contains $markerBegin) -and
+    -not ($lines -contains $legacyMarkerBegin)) {
     Write-Warning "$HostRecord already appears in $hostsPath outside this script's managed block. The first matching line wins, so check for conflicts if the override doesn't take effect."
 }
 
 $filtered = New-Object System.Collections.Generic.List[string]
 $skipping = $false
 foreach ($line in $lines) {
-    if ($line -eq $markerBegin) { $skipping = $true; continue }
-    if ($line -eq $markerEnd) { $skipping = $false; continue }
+    if ($line -eq $markerBegin -or $line -eq $legacyMarkerBegin) { $skipping = $true; continue }
+    if ($line -eq $markerEnd -or $line -eq $legacyMarkerEnd) { $skipping = $false; continue }
     if (-not $skipping) { $filtered.Add($line) }
 }
 

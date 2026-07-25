@@ -75,7 +75,7 @@ Skip this to run without DNS (players connect by `IP:port`). To enable automatic
 open the dashboard → **DNS / Cloudflare settings** and enter your server domain, Zone ID and API
 token. The server domain may be the selected zone (`example.com`) or a namespace beneath it
 (`games.example.com`). The shared DDNS target is generated as
-`factorio-tools-manager.<server-domain>`; each instance remains reachable at
+`factorio-stack-manager.<server-domain>`; each instance remains reachable at
 `<instance>.<server-domain>`. **Test configuration** validates the unsaved values, resolves the
 read-only zone name from the Zone ID, and checks for a conflicting CNAME without changing DNS;
 **Save & enable DNS** then stores them in the app database and takes effect immediately — no restart,
@@ -602,7 +602,7 @@ Two fixes, in order of preference:
    pfSense/OPNsense, UniFi, and many ASUS/Merlin routers). Nothing else changes.
 2. **Add one local DNS override for the shared host record.** Because every server's SRV target
    is that same record (shown as *Generated host record* on the DNS settings page, e.g.
-   `factorio-tools-manager.mydomain.com`), a single override fixes every server at once — you
+   `factorio-stack-manager.mydomain.com`), a single override fixes every server at once — you
    don't need one per subdomain. Point it at the host's LAN IP in whatever resolves DNS for your
    network: a Pi-hole/AdGuard Home local entry, a dnsmasq/Unbound override, or your router's own
    DNS server. Depending on what that resolver supports, this might be a plain A-record override,
@@ -616,11 +616,11 @@ Two fixes, in order of preference:
    PowerShell prompt) add/update the entry idempotently — safe to re-run if the LAN IP changes:
 
    ```bash
-   sudo ./scripts/add-host-entry.sh factorio-tools-manager.mydomain.com 192.168.1.50
+   sudo ./scripts/add-host-entry.sh factorio-stack-manager.mydomain.com 192.168.1.50
    ```
 
    ```powershell
-   .\scripts\add-host-entry.ps1 -HostRecord factorio-tools-manager.mydomain.com -LanIp 192.168.1.50
+   .\scripts\add-host-entry.ps1 -HostRecord factorio-stack-manager.mydomain.com -LanIp 192.168.1.50
    ```
 
    Both take the *generated host record* (not the per-server subdomain) and the host's LAN IP.
