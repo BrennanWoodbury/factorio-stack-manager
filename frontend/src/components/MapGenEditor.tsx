@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { MapGenSettings, MapGenTemplate } from '../types';
 import { run, toastError } from '../ui';
@@ -187,6 +187,29 @@ function dynamicControls(value: MapGenSettings): Ctrl[] {
  * map-generation sliders, grouped per planet according to the game mode. The parent
  * owns persistence — this only reads `value` and emits `onChange`.
  */
+/**
+ * Whether two settings objects mean the same thing. Compared through a
+ * key-sorted serialisation rather than `JSON.stringify` alone, because the same
+ * settings arrive with different key order depending on where they came from —
+ * the template endpoint, a resumed draft, or the editor's own writes.
+ */
+export function sameSettings(a: unknown, b: unknown): boolean {
+  return canonical(a) === canonical(b);
+}
+
+function canonical(v: unknown): string {
+  // Distinct tokens: JSON.stringify renders undefined as undefined, which would
+  // otherwise make it indistinguishable from null.
+  if (v === undefined) return '?';
+  if (v === null) return 'null';
+  if (typeof v !== 'object') return JSON.stringify(v) as string;
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  const entries = Object.entries(v as Record<string, unknown>)
+    .filter(([, val]) => val !== undefined)
+    .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+  return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${canonical(val)}`).join(',')}}`;
+}
+
 export function MapGenEditor({
   value,
   onChange,
@@ -203,6 +226,15 @@ export function MapGenEditor({
   // Which template is currently loaded, and what it looked like when it was — so
   // the picker can name it, and say when the sliders have since moved away from it.
   const [loaded, setLoaded] = useState<{ id: string; snapshot: string } | null>(null);
+  // Settings often arrive with no record of where they came from: a resumed wizard
+  // draft, or the global default template applied at creation. Recognising them
+  // means the picker names the template instead of claiming none is loaded.
+  const derived = useMemo(() => {
+    if (loaded) return null;
+    const match = templates.find((t) => sameSettings(t.settings, value));
+    return match ? { id: match.id, snapshot: JSON.stringify(match.settings) } : null;
+  }, [loaded, templates, value]);
+  const current = loaded ?? derived;
 
   const loadTemplates = useCallback(async () => {
     if (!showTemplates) return;
@@ -287,7 +319,7 @@ export function MapGenEditor({
 
   // Settings have been edited since the template was loaded. Compared by value
   // because every edit path rebuilds the object rather than mutating it.
-  const drifted = loaded !== null && JSON.stringify(value) !== loaded.snapshot;
+  const drifted = current !== null && !sameSettings(value, JSON.parse(current.snapshot));
 
   const controlSliders = (c: Ctrl) => (
     <Group key={c.key} title={c.label}>
@@ -320,7 +352,7 @@ export function MapGenEditor({
         <div className="row" style={{ marginBottom: 14, flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <select
             aria-label="World generation template"
-            value={loaded?.id ?? ''}
+            value={current?.id ?? ''}
             onChange={(e) => void applyTemplate(e.target.value)}
             style={{ maxWidth: 220 }}
           >
@@ -333,10 +365,10 @@ export function MapGenEditor({
           </select>
           {/* Re-selecting the same option fires no change event, so an explicit
               reload is the only way back to the template once sliders have moved. */}
-          {loaded && drifted && (
+          {current && drifted && (
             <>
               <span className="small muted">modified</span>
-              <button type="button" className="small ghost" onClick={() => void applyTemplate(loaded.id)}>
+              <button type="button" className="small ghost" onClick={() => void applyTemplate(current.id)}>
                 Reload
               </button>
             </>

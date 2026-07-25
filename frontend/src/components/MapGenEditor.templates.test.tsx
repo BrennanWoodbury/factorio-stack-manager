@@ -13,6 +13,7 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock('../api', () => ({ api: apiMocks }));
 
 const PEACEFUL: MapGenSettings = { peaceful_mode: true, water: 1 };
+const RICH: MapGenSettings = { peaceful_mode: false, water: 2 };
 
 /** The editor is controlled, so the test owns the settings the way the app does. */
 function Harness({ initial = {} as MapGenSettings }: { initial?: MapGenSettings }) {
@@ -29,9 +30,11 @@ const picker = () => screen.getByRole('combobox', { name: 'World generation temp
 
 beforeEach(() => {
   apiMocks.listMapGenTemplates.mockResolvedValue({
+    // Listings carry settings so the editor can recognise where a settings object
+    // came from — see the derivation tests below.
     templates: [
-      { id: 't1', name: 'Peaceful', modCount: 0 },
-      { id: 't2', name: 'Rich resources', modCount: 0 },
+      { id: 't1', name: 'Peaceful', settings: PEACEFUL },
+      { id: 't2', name: 'Rich resources', settings: RICH },
     ],
   });
   apiMocks.getMapGenTemplate.mockResolvedValue({ id: 't1', name: 'Peaceful', settings: PEACEFUL });
@@ -85,16 +88,62 @@ describe('world generation template picker', () => {
     await waitFor(() => expect(screen.queryByText('modified')).toBeNull());
   });
 
-  test('choosing the blank entry goes back to no template', async () => {
-    render(<Harness />);
+  test('the blank entry clears the name when the settings match no template', async () => {
+    render(<Harness initial={{ water: 99 }} />);
     await waitFor(() => expect(apiMocks.listMapGenTemplates).toHaveBeenCalled());
     fireEvent.change(picker(), { target: { value: 't1' } });
     await waitFor(() => expect((picker() as HTMLSelectElement).value).toBe('t1'));
 
+    // Move away from the template, then clear.
+    fireEvent.click(screen.getByRole('button', { name: 'edit elsewhere' }));
     fireEvent.change(picker(), { target: { value: '' } });
 
     await waitFor(() => expect((picker() as HTMLSelectElement).value).toBe(''));
+    // Blank loads nothing — only the earlier explicit pick hit the API.
     expect(apiMocks.getMapGenTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  /* ---------------------------------------------------------------- *
+   * Recognising settings that arrived without a pick
+   * ---------------------------------------------------------------- */
+
+  test('settings that came from a template are named, with nothing selected', async () => {
+    // The wizard case: a resumed draft, or the global default template applied at
+    // creation, hands the editor raw settings. Before this it read "Load a
+    // template…" over settings that plainly came from one.
+    render(<Harness initial={PEACEFUL} />);
+    await waitFor(() => expect(apiMocks.listMapGenTemplates).toHaveBeenCalled());
+
+    await waitFor(() => expect((picker() as HTMLSelectElement).value).toBe('t1'));
+    expect(apiMocks.getMapGenTemplate).not.toHaveBeenCalled();
+    expect(screen.queryByText('modified')).toBeNull();
+  });
+
+  test('recognition survives the key order settings happen to arrive in', async () => {
+    // The same settings serialise differently depending on whether they came from
+    // the template endpoint, a draft, or the editor's own writes.
+    render(<Harness initial={{ water: 1, peaceful_mode: true }} />);
+    await waitFor(() => expect(apiMocks.listMapGenTemplates).toHaveBeenCalled());
+
+    await waitFor(() => expect((picker() as HTMLSelectElement).value).toBe('t1'));
+  });
+
+  test('settings matching nothing leave the picker empty rather than guessing', async () => {
+    render(<Harness initial={{ water: 7, peaceful_mode: true }} />);
+    await waitFor(() => expect(apiMocks.listMapGenTemplates).toHaveBeenCalled());
+    await act(async () => {});
+
+    expect((picker() as HTMLSelectElement).value).toBe('');
+  });
+
+  test('editing away from recognised settings drops the name', async () => {
+    render(<Harness initial={PEACEFUL} />);
+    await waitFor(() => expect((picker() as HTMLSelectElement).value).toBe('t1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'edit elsewhere' }));
+
+    // No longer those settings, and the user never claimed they were.
+    await waitFor(() => expect((picker() as HTMLSelectElement).value).toBe(''));
   });
 
   test('a template that fails to load leaves the picker on what is really loaded', async () => {

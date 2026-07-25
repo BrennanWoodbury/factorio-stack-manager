@@ -113,11 +113,32 @@ export class PortAllocator {
     this.db.prepare('DELETE FROM port_allocations WHERE server_id = ?').run(serverId);
   }
 
-  /** Introspection for status / capacity display. */
-  capacity(kind: PortKind): { total: number; used: number; free: number } {
+  /**
+   * Introspection for status / capacity display.
+   *
+   * `hostPortsInUse` (from DockerService) makes the numbers reflect the host
+   * rather than just our bookkeeping: a Factorio server running outside the
+   * manager occupies a port we cannot hand out, so counting it as free would
+   * promise capacity that doesn't exist. Omit it and the answer is our own
+   * allocations only, as before.
+   *
+   * `external` counts only what is *visible* — ports published by other
+   * containers. A native process holding one is invisible from inside the
+   * manager's network namespace and shows up only when a bind fails at start.
+   */
+  capacity(
+    kind: PortKind,
+    hostPortsInUse?: ReadonlySet<number>,
+  ): { total: number; used: number; external: number; free: number } {
     const [start, end] = this.rangeFor(kind);
     const total = end - start + 1;
-    const used = this.takenSet(kind).size;
-    return { total, used, free: total - used };
+    const ours = this.takenSet(kind);
+    let external = 0;
+    if (hostPortsInUse) {
+      for (let p = start; p <= end; p++) {
+        if (hostPortsInUse.has(p) && !ours.has(p)) external++;
+      }
+    }
+    return { total, used: ours.size, external, free: total - ours.size - external };
   }
 }

@@ -22,6 +22,12 @@ export function systemRouter(ctx: AppContext): Router {
         dockerError = (err as Error).message;
       }
 
+      // Published ports of every running container, so capacity reflects what the
+      // host actually has left. Already best-effort internally (an empty set on a
+      // Docker hiccup), and this endpoint is polled every 10s — a local socket
+      // call at that rate is not worth caching.
+      const hostPorts = dockerOk ? await ctx.docker.hostPortsInUse() : undefined;
+
       res.json({
         version: ctx.config.appVersion,
         docker: { ok: dockerOk, error: dockerError },
@@ -34,11 +40,11 @@ export function systemRouter(ctx: AppContext): Router {
         ports: {
           game: {
             range: ctx.config.gamePortRange,
-            ...ctx.allocator.capacity('game'),
+            ...ctx.allocator.capacity('game', hostPorts),
           },
           rcon: {
             range: ctx.config.rconPortRange,
-            ...ctx.allocator.capacity('rcon'),
+            ...ctx.allocator.capacity('rcon', hostPorts),
           },
         },
       });
