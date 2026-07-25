@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  compareVersions,
+  satisfiesConstraint,
   gameSeries,
   installedFromInfo,
   validateModSet,
@@ -11,12 +13,13 @@ import {
 import { parseDependencies, type ImageProfile } from '../src/services/imageProfile.js';
 
 /**
- * The two fatal cases here were confirmed by running factoriotools/factorio:stable
+ * Every fatal case here was confirmed by running factoriotools/factorio:stable
  * (2.0.77) with a bad mod: the container exits(1) about 7ms into startup and the
  * restart policy loops it forever. Factorio's own wording, which these tests pin:
  *
  *   Failed to load mod "testmod": Incompatible Factorio version (current: 2.0, required: 1.1)
  *   Failed to load mod "testmod": Missing required dependency flib >= 0.14.0
+ *   Failed to load mod "testmod": Dependency depmod >= 2.0.0 is not satisfied (active: depmod 1.0.0)
  */
 
 function profile(gameVersion: string, bundled: string[] = ['base']): ImageProfile {
@@ -128,15 +131,80 @@ test('disabled mods are ignored entirely, however broken they are', () => {
   assert.deepEqual(validateModSet(list, installed, profile('2.0.77')), []);
 });
 
-test('dependency version constraints are deliberately not enforced', () => {
-  // flib is present but far too old for the constraint. Enforcing this means
-  // solving for a compatible release set — explicitly out of scope here.
+test("an unsatisfied version constraint is reported in the game's own words", () => {
+  // Verified fatal on 2.0.77, phrased by Factorio as:
+  //   Dependency depmod >= 2.0.0 is not satisfied (active: depmod 1.0.0)
   const problems = validateModSet(
     on('base', 'm', 'flib'),
     [withDeps('m', ['flib >= 0.14.0']), mod('flib', { version: '0.1.0' })],
     profile('2.0.77'),
   );
-  assert.deepEqual(problems, []);
+  assert.equal(problems.length, 1);
+  assert.equal(problems[0].kind, 'dependency-version');
+  assert.equal(
+    problems[0].detail,
+    'Dependency flib >= 0.14.0 is not satisfied (active: flib 0.1.0).',
+  );
+});
+
+test('a satisfied constraint is silent, at the boundary included', () => {
+  const set = (flibVersion: string) =>
+    validateModSet(
+      on('base', 'm', 'flib'),
+      [withDeps('m', ['flib >= 0.14.0']), mod('flib', { version: flibVersion })],
+      profile('2.0.77'),
+    );
+  assert.deepEqual(set('0.14.0'), [], '>= includes the named version');
+  assert.deepEqual(set('0.14'), [], 'a missing component counts as zero');
+  assert.deepEqual(set('1.0.0'), []);
+  assert.equal(set('0.13.9').length, 1);
+});
+
+test('every comparator the game allows is honoured', () => {
+  assert.ok(satisfiesConstraint('1.2.3', '>= 1.2.3'));
+  assert.ok(!satisfiesConstraint('1.2.3', '> 1.2.3'));
+  assert.ok(satisfiesConstraint('1.2.3', '= 1.2.3'));
+  assert.ok(!satisfiesConstraint('1.2.4', '= 1.2.3'));
+  assert.ok(satisfiesConstraint('1.2.3', '<= 1.2.3'));
+  assert.ok(!satisfiesConstraint('1.2.3', '< 1.2.3'));
+  assert.ok(satisfiesConstraint('1.2.2', '< 1.2.3'));
+});
+
+test('versions compare component-wise, not as text', () => {
+  assert.equal(compareVersions('0.9.0', '0.10.0'), -1, '10 is newer than 9');
+  assert.equal(compareVersions('1.0', '1.0.0'), 0);
+  assert.equal(compareVersions('2.0.77', '2.1.0'), -1);
+  assert.equal(compareVersions('2.1.0', '2.0.77'), 1);
+  assert.ok(satisfiesConstraint('0.10.0', '>= 0.9.0'), 'the classic string-compare trap');
+});
+
+test('a constraint we cannot parse is treated as satisfied', () => {
+  // Blocking a start over a manifest we simply did not understand is worse than
+  // missing one the game would have rejected.
+  assert.ok(satisfiesConstraint('1.0.0', 'sometime after 2.0'));
+  assert.ok(satisfiesConstraint('1.0.0', ''));
+  assert.ok(satisfiesConstraint('1.0.0', undefined));
+});
+
+test('constraints on mods bundled in the image are checked against the image', () => {
+  const p = profile('2.1.12', ['base']);
+  const tooNew = validateModSet(on('base', 'm'), [withDeps('m', ['base >= 2.2.0'], '2.1')], p);
+  assert.equal(tooNew.length, 1);
+  assert.equal(tooNew[0].kind, 'dependency-version');
+  assert.match(tooNew[0].detail, /active: base 2\.1\.12/);
+
+  assert.deepEqual(
+    validateModSet(on('base', 'm'), [withDeps('m', ['base >= 2.0.0'], '2.1')], p),
+    [],
+  );
+});
+
+test('a constraint on a missing mod stays a missing dependency, not a version problem', () => {
+  const problems = validateModSet(on('base', 'm'), [withDeps('m', ['flib >= 0.14.0'])], profile('2.0.77'));
+  assert.deepEqual(
+    problems.map((p) => p.kind),
+    ['missing-dependency'],
+  );
 });
 
 test('an unknown game version disables the series check but not the rest', () => {

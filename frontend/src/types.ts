@@ -173,6 +173,7 @@ export interface ModProblem {
     | 'game-version'
     | 'missing-dependency'
     | 'disabled-dependency'
+    | 'dependency-version'
     | 'conflict';
   mod: string;
   detail: string;
