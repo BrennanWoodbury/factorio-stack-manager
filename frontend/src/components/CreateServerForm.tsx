@@ -6,7 +6,7 @@ import { FactorioTagSelect } from './FactorioTagSelect';
 import { useFactorioImage } from '../useFactorioImage';
 import { MapGenEditor } from './MapGenEditor';
 import { MapPreview } from './MapPreview';
-import { WizardMods } from './WizardMods';
+import { WizardMods, type WizardModsHandle } from './WizardMods';
 import { DnsNamePreview } from './DnsNamePreview';
 import { GameModeSelect } from './GameModeSelect';
 import { Collapsible } from './Collapsible';
@@ -73,6 +73,11 @@ export function CreateServerForm({
   const [mapSettings, setMapSettings] = useState<MapGenSettings | null>(null);
   const [mapGenEdited, setMapGenEdited] = useState(false);
   const [modsEdited, setModsEdited] = useState(false);
+  const [modsUnapplied, setModsUnapplied] = useState(false);
+  // Set while waiting on the "mods not applied" confirm; holds the create/test action to
+  // resume once the user confirms applying the pending mod changes (or null if idle).
+  const [pendingAction, setPendingAction] = useState<(() => void | Promise<void>) | null>(null);
+  const wizardModsRef = useRef<WizardModsHandle>(null);
   const [exchangeString, setExchangeString] = useState('');
   const [importDecoded, setImportDecoded] = useState(false);
   const [decoding, setDecoding] = useState(false);
@@ -265,6 +270,8 @@ export function CreateServerForm({
     setSavedSaveName(null);
     setMapGenEdited(false);
     setModsEdited(false);
+    setModsUnapplied(false);
+    setPendingAction(null);
     setPhase('mode');
   };
 
@@ -347,6 +354,34 @@ export function CreateServerForm({
   };
 
   const resetProbe = () => setProbe({ phase: 'idle', create: true, status: '', log: [], errors: [] });
+
+  // Gate anything that finalizes the draft on mods added/edited in the wizard but never
+  // "Save & download"ed — otherwise they're silently missing from the created server (or
+  // masked by falling back to the default modpack). If there's nothing pending, or this
+  // action doesn't create anything (e.g. a plain Test), just run it.
+  const guardCreate = (willCreate: boolean, fn: () => void | Promise<void>) => {
+    if (willCreate && modsUnapplied) {
+      setPendingAction(() => fn);
+      return;
+    }
+    void fn();
+  };
+
+  // User confirmed "apply on create": save & download the pending mods, then resume
+  // whichever create/test action was waiting on them.
+  const confirmApplyMods = () => {
+    const fn = pendingAction;
+    setPendingAction(null);
+    if (!fn) return;
+    void (async () => {
+      try {
+        await wizardModsRef.current?.save();
+      } catch {
+        return; // save() already surfaced the error via toast
+      }
+      await fn();
+    })();
+  };
 
   // Generate is always ready; Import once decoded; Save once a file is uploaded.
   const finalizeReady =
@@ -494,11 +529,13 @@ export function CreateServerForm({
                 >
                   {draftId && (
                     <WizardMods
+                      ref={wizardModsRef}
                       draftId={draftId}
                       onSaved={(mods) => {
                         setModsEdited(true);
                         void api.updateDraft(draftId, { mods }).catch(() => {});
                       }}
+                      onDirtyChange={setModsUnapplied}
                     />
                   )}
                 </Collapsible>
@@ -653,11 +690,14 @@ export function CreateServerForm({
                     <button
                       className="ghost"
                       disabled={creating || !canCreate}
-                      onClick={() => void create()}
+                      onClick={() => guardCreate(true, create)}
                     >
                       Create anyway
                     </button>
-                    <button className="primary" onClick={() => void runProbe(probe.create)}>
+                    <button
+                      className="primary"
+                      onClick={() => guardCreate(probe.create, () => runProbe(probe.create))}
+                    >
                       Re-test
                     </button>
                   </div>
@@ -688,7 +728,7 @@ export function CreateServerForm({
                       <button
                         className="primary"
                         disabled={creating || !canCreate}
-                        onClick={() => void create()}
+                        onClick={() => guardCreate(true, create)}
                       >
                         {creating ? 'Creating…' : 'Create server'}
                       </button>
@@ -729,11 +769,15 @@ export function CreateServerForm({
                         <button
                           className="ghost"
                           disabled={creating || !canCreate}
-                          onClick={() => void create()}
+                          onClick={() => guardCreate(true, create)}
                         >
                           {creating ? 'Creating…' : 'Create without testing'}
                         </button>
-                        <button className="primary" disabled={!canCreate} onClick={() => void runProbe(true)}>
+                        <button
+                          className="primary"
+                          disabled={!canCreate}
+                          onClick={() => guardCreate(true, () => runProbe(true))}
+                        >
                           Test &amp; Create
                         </button>
                       </>
@@ -757,6 +801,16 @@ export function CreateServerForm({
           confirmLabel="Discard & change"
           onConfirm={() => void doBack()}
           onCancel={() => setConfirmChange(false)}
+        />
+      )}
+      {pendingAction && (
+        <ConfirmDialog
+          title="Mods not applied"
+          body="You've added or changed mods but haven't hit Save & download yet, so they won't be included. Apply them now and continue?"
+          confirmLabel="Apply & continue"
+          danger={false}
+          onConfirm={confirmApplyMods}
+          onCancel={() => setPendingAction(null)}
         />
       )}
     </>
