@@ -16,7 +16,8 @@ vi.mock('../api', async (importOriginal) => {
   return { ...actual, api: apiMocks };
 });
 
-const disabledDns: DnsSettings = {
+/** A fresh install: the switch defaults on, but nothing is configured yet. */
+const unconfiguredDns: DnsSettings = {
   revision: 0,
   baseDomain: '',
   hostRecordName: '',
@@ -25,11 +26,13 @@ const disabledDns: DnsSettings = {
   hasToken: false,
   ddnsIntervalSeconds: 300,
   ipCheckUrl: 'https://api.ipify.org',
-  enabled: false,
+  enabled: true,
+  configured: false,
+  active: false,
 };
 
 beforeEach(() => {
-  apiMocks.getDns.mockResolvedValue({ dns: disabledDns });
+  apiMocks.getDns.mockResolvedValue({ dns: unconfiguredDns });
   apiMocks.testDns.mockResolvedValue({
     ok: true,
     zoneName: 'example.com',
@@ -37,7 +40,7 @@ beforeEach(() => {
   });
   apiMocks.setDns.mockResolvedValue({
     dns: {
-      ...disabledDns,
+      ...unconfiguredDns,
       revision: 1,
       baseDomain: 'games.example.com',
       hostRecordName: 'factorio-tools-manager.games.example.com',
@@ -45,6 +48,8 @@ beforeEach(() => {
       cloudflareZoneName: 'example.com',
       hasToken: true,
       enabled: true,
+      configured: true,
+      active: true,
     },
   });
   apiMocks.reconcileDns.mockResolvedValue({
@@ -114,6 +119,7 @@ describe('DnsSettingsPanel', () => {
     await waitFor(() => expect(apiMocks.setDns).toHaveBeenCalledOnce());
     expect(apiMocks.setDns).toHaveBeenCalledWith({
       expectedRevision: 0,
+      enabled: true,
       baseDomain: 'games.example.com',
       cloudflareZoneId: 'zone-123',
       cloudflareToken: 'candidate-token',
@@ -133,7 +139,7 @@ describe('DnsSettingsPanel', () => {
 
   test('reloads current settings when another admin saved first', async () => {
     const activeDns: DnsSettings = {
-      ...disabledDns,
+      ...unconfiguredDns,
       revision: 4,
       baseDomain: 'games.example.com',
       hostRecordName: 'factorio-tools-manager.games.example.com',
@@ -141,6 +147,8 @@ describe('DnsSettingsPanel', () => {
       cloudflareZoneName: 'example.com',
       hasToken: true,
       enabled: true,
+      configured: true,
+      active: true,
     };
     apiMocks.getDns.mockResolvedValue({ dns: activeDns });
     apiMocks.setDns.mockRejectedValue(
@@ -161,13 +169,15 @@ describe('DnsSettingsPanel', () => {
   test('runs manual reconciliation and shows per-record health', async () => {
     apiMocks.getDns.mockResolvedValue({
       dns: {
-        ...disabledDns,
+        ...unconfiguredDns,
         baseDomain: 'games.example.com',
         hostRecordName: 'factorio-tools-manager.games.example.com',
         cloudflareZoneId: 'zone-123',
         cloudflareZoneName: 'example.com',
         hasToken: true,
         enabled: true,
+        configured: true,
+        active: true,
       },
     });
     render(<DnsSettingsPanel />);

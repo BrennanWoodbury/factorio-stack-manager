@@ -8,6 +8,12 @@ import { kvGet, kvSet, type DB } from '../db/index.js';
  */
 export interface DnsSettings {
   revision: number;
+  /**
+   * The user's on/off switch, independent of whether DNS is configured. Turning
+   * automation off must not mean deleting a token and a zone ID the user then has
+   * to type back in.
+   */
+  enabled: boolean;
   baseDomain: string;
   hostRecordName: string;
   cloudflareZoneId: string;
@@ -18,6 +24,7 @@ export interface DnsSettings {
 }
 
 const K = {
+  enabled: 'dns_enabled',
   baseDomain: 'dns_base_domain',
   // Retained as a migration marker for installations that previously chose
   // this value manually. Runtime settings always use deriveHostRecordName().
@@ -49,6 +56,9 @@ export function getDnsSettings(db: DB): DnsSettings {
   const baseDomain = kvGet(db, K.baseDomain) ?? '';
   return {
     revision: Number.isSafeInteger(revision) && revision >= 0 ? revision : 0,
+    // Absent means on: installations that predate the switch had DNS running
+    // whenever it was configured, and an upgrade must not silently stop it.
+    enabled: kvGet(db, K.enabled) !== '0',
     baseDomain,
     hostRecordName: deriveHostRecordName(baseDomain),
     cloudflareZoneId: kvGet(db, K.zoneId) ?? '',
@@ -60,6 +70,7 @@ export function getDnsSettings(db: DB): DnsSettings {
 }
 
 export interface DnsSettingsPatch {
+  enabled?: boolean;
   baseDomain?: string;
   cloudflareZoneId?: string;
   /** Verified name returned by Cloudflare; never accepted from the public API. */
@@ -71,6 +82,10 @@ export interface DnsSettingsPatch {
 
 export function setDnsSettings(db: DB, patch: DnsSettingsPatch): void {
   let changed = false;
+  if (patch.enabled !== undefined) {
+    changed = true;
+    kvSet(db, K.enabled, patch.enabled ? '1' : '0');
+  }
   if (patch.baseDomain !== undefined) {
     changed = true;
     const baseDomain = patch.baseDomain.trim().toLowerCase().replace(/\.$/, '');
@@ -106,9 +121,23 @@ export function setDnsSettings(db: DB, patch: DnsSettingsPatch): void {
   }
 }
 
-/** DNS automation is on only when everything it needs is present. */
-export function dnsEnabled(s: DnsSettings): boolean {
+/** Everything DNS automation needs is present — says nothing about the switch. */
+export function dnsConfigured(s: DnsSettings): boolean {
   return Boolean(s.cloudflareToken && s.cloudflareZoneId && s.baseDomain && s.hostRecordName);
+}
+
+/** DNS automation actually runs: switched on *and* fully configured. */
+export function dnsEnabled(s: DnsSettings): boolean {
+  return s.enabled && dnsConfigured(s);
+}
+
+/**
+ * Whether a single server takes part in DNS. Separate from the global switch: a
+ * private or throwaway server can be kept out of public DNS while every other
+ * server still gets records. Absent/legacy rows count as participating.
+ */
+export function serverDnsEnabled(server: { dns_enabled?: number }): boolean {
+  return server.dns_enabled !== 0;
 }
 
 /** UI-facing view: token is never returned, only whether it's set. */
@@ -122,6 +151,11 @@ export function dnsSettingsDto(s: DnsSettings) {
     hasToken: s.cloudflareToken !== '',
     ddnsIntervalSeconds: s.ddnsIntervalSeconds,
     ipCheckUrl: s.ipCheckUrl,
-    enabled: dnsEnabled(s),
+    /** The switch — what the checkbox binds to. */
+    enabled: s.enabled,
+    /** Whether the settings are complete enough to run. */
+    configured: dnsConfigured(s),
+    /** Switched on and configured: DNS automation is really running. */
+    active: dnsEnabled(s),
   };
 }

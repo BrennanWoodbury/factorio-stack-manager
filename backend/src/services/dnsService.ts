@@ -5,6 +5,7 @@ import { CloudflareClient, type SrvData } from '../lib/cloudflare.js';
 import { CloudflareError, DnsSettingsConflictError } from '../lib/errors.js';
 import {
   dnsEnabled,
+  serverDnsEnabled,
   deriveHostRecordName,
   getDnsSettings,
   setDnsSettings,
@@ -106,6 +107,7 @@ export class DnsService {
         : candidate.baseDomain.trim().toLowerCase().replace(/\.$/, '');
     return {
       revision: current.revision,
+      enabled: candidate.enabled ?? current.enabled,
       baseDomain,
       hostRecordName: deriveHostRecordName(baseDomain),
       cloudflareZoneId:
@@ -149,8 +151,11 @@ export class DnsService {
   async createServerSrv(server: ServerRow): Promise<void> {
     const s = this.settings();
     const cf = this.cf(s);
-    if (!cf) return;
-    const record = await cf.createSrv(this.srvData(s, server.subdomain, server.game_port));
+    if (!cf || !serverDnsEnabled(server)) return;
+    const record = await cf.createSrv(
+      this.fullSrvName(s, server.subdomain),
+      this.srvData(s, server.subdomain, server.game_port),
+    );
     this.db
       .prepare(
         `INSERT INTO dns_records (server_id, type, name, cloudflare_record_id, content)
@@ -165,17 +170,24 @@ export class DnsService {
   }
 
   /**
-   * Update a server's SRV record after a subdomain rename and/or port change.
-   * If no record is tracked yet (e.g. created while DNS was off) it creates one.
+   * Make Cloudflare match a server's current intent: after a subdomain rename or
+   * port change, and after the server's own DNS toggle flips either way. A server
+   * opted out of DNS has its record removed rather than updated; one opted back in
+   * gets a fresh record, since none is tracked.
    */
   async updateServerSrv(server: ServerRow): Promise<void> {
     const s = this.settings();
     const cf = this.cf(s);
     if (!cf) return;
+    if (!serverDnsEnabled(server)) return this.deleteServerSrv(server.id);
     const existing = this.srvRowFor(server.id);
     const data = this.srvData(s, server.subdomain, server.game_port);
     if (existing?.cloudflare_record_id) {
-      await cf.updateSrv(existing.cloudflare_record_id, data);
+      await cf.updateSrv(
+        existing.cloudflare_record_id,
+        this.fullSrvName(s, server.subdomain),
+        data,
+      );
       this.db
         .prepare('UPDATE dns_records SET name = ?, content = ? WHERE id = ?')
         .run(
@@ -358,7 +370,7 @@ export class DnsService {
       try {
         const found = forceCreate ? [] : await cf.findRecords('SRV', name);
         if (found.length > 0) {
-          await cf.updateSrv(found[0].id, this.srvData(s, server.subdomain, server.game_port));
+          await cf.updateSrv(found[0].id, name, this.srvData(s, server.subdomain, server.game_port));
           records.push({
             type: 'SRV',
             name,
@@ -369,7 +381,10 @@ export class DnsService {
             content,
           });
         } else {
-          const created = await cf.createSrv(this.srvData(s, server.subdomain, server.game_port));
+          const created = await cf.createSrv(
+            name,
+            this.srvData(s, server.subdomain, server.game_port),
+          );
           records.push({
             type: 'SRV',
             name,

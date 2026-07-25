@@ -21,6 +21,7 @@ const createSchema = z.object({
   generateNewSave: z.boolean().optional(),
   factorioTag: z.string().max(128).optional(),
   autoRestart: z.boolean().optional(),
+  dnsEnabled: z.boolean().optional(),
   gameMode: z.enum(['vanilla', 'space_age', 'space_age_no_quality', 'modded']).optional(),
   mods: z.array(modEntrySchema).optional(),
   // Initial map generation: raw settings, or a template id to copy settings from.
@@ -37,6 +38,7 @@ const updateSchema = z.object({
   generateNewSave: z.boolean().optional(),
   factorioTag: z.string().max(128).optional(),
   autoRestart: z.boolean().optional(),
+  dnsEnabled: z.boolean().optional(),
   gameMode: z.enum(['vanilla', 'space_age', 'space_age_no_quality', 'modded']).optional(),
   autoBackup: z.boolean().optional(),
   backupIntervalMinutes: z.number().int().min(5).max(10080).optional(),

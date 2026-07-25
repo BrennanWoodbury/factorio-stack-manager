@@ -17,6 +17,8 @@ export interface Server {
   appliedModpackId: string | null;
   factorioTag: string;
   autoRestart: boolean;
+  /** Whether this server gets Cloudflare DNS records at all. */
+  dnsEnabled: boolean;
   autoBackup: boolean;
   backupIntervalMinutes: number;
   backupKeep: number;
@@ -257,7 +259,12 @@ export interface DnsSettings {
   hasToken: boolean;
   ddnsIntervalSeconds: number;
   ipCheckUrl: string;
+  /** The user's on/off switch — settings are kept either way. */
   enabled: boolean;
+  /** Everything DNS needs is filled in. */
+  configured: boolean;
+  /** Switched on *and* configured: records are really being managed. */
+  active: boolean;
 }
 
 export interface DnsReconcileRecordResult {
