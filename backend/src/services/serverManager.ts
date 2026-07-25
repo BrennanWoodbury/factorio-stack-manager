@@ -826,6 +826,31 @@ export class ServerManager {
     return true;
   }
 
+  /** How many servers currently have a running container. */
+  async runningCount(): Promise<number> {
+    return (await this.docker.runningServerIds()).length;
+  }
+
+  /**
+   * Restart every currently-running server. Used when an admin explicitly opts in
+   * (after a global-settings save) to applying the change immediately, rather than
+   * waiting for each server's own next (re)start to pick it up.
+   */
+  async restartRunning(): Promise<{ restarted: string[]; failed: { id: string; error: string }[] }> {
+    const ids = await this.docker.runningServerIds();
+    const restarted: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+    for (const id of ids) {
+      try {
+        await this.restart(id);
+        restarted.push(id);
+      } catch (err) {
+        failed.push({ id, error: (err as Error).message });
+      }
+    }
+    return { restarted, failed };
+  }
+
   /**
    * The effective advanced server-settings (hard-coded ⊕ global defaults ⊕ this
    * server's sparse overrides), plus which keys are overridden and the global
