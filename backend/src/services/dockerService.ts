@@ -187,14 +187,20 @@ export class DockerService {
    * otherwise be handed out and fail at start. Only running containers publish
    * bindings, so stopped ones are excluded on purpose.
    *
+   * `excludeServerId`, when given, skips that server's own container. A restart
+   * recreates the container without stopping it first, so its own still-running
+   * container would otherwise show its current ports as "taken" — which would
+   * bounce the server off its own port on every restart instead of keeping it.
+   *
    * This cannot see a native process holding a port — nothing short of binding it
    * can, and the manager runs in its own network namespace. That case is caught
    * at start instead, where Docker reports the conflict.
    */
-  async hostPortsInUse(): Promise<Set<number>> {
+  async hostPortsInUse(excludeServerId?: string): Promise<Set<number>> {
     const ports = new Set<number>();
     try {
       for (const c of await this.docker.listContainers()) {
+        if (excludeServerId && c.Labels?.[SERVER_ID_LABEL] === excludeServerId) continue;
         for (const p of c.Ports ?? []) {
           if (typeof p.PublicPort === 'number') ports.add(p.PublicPort);
         }
