@@ -197,7 +197,11 @@ export function ModsPanel({ server }: { server: Server }) {
         next server start/restart.
       </div>
 
-      <ApplyModpack server={server} onApplied={load} />
+      <ApplyModpack
+        serverId={server.id}
+        appliedModpackId={server.appliedModpackId}
+        onApplied={load}
+      />
     </div>
   );
 }

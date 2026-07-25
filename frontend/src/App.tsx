@@ -66,7 +66,7 @@ export function App() {
             Modpacks
           </button>
           <button className={tab === 'templates' ? 'primary' : 'ghost'} onClick={() => go('templates')}>
-            Templates
+            World Generation
           </button>
           <button className={tab === 'settings' ? 'primary' : 'ghost'} onClick={() => go('settings')}>
             Settings

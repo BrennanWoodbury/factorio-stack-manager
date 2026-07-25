@@ -1,10 +1,23 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import type { Modpack, Server } from '../types';
+import type { Modpack } from '../types';
 import { toastError, toastSuccess } from '../ui';
 
-/** Apply a shared modpack to this server (from the Mods tab). */
-export function ApplyModpack({ server, onApplied }: { server: Server; onApplied: () => void }) {
+/**
+ * Apply a shared modpack to a server or to a new-server wizard draft — both are
+ * server rows as far as the API is concerned, so this takes an id rather than a
+ * whole Server, which a draft doesn't have.
+ */
+export function ApplyModpack({
+  serverId,
+  appliedModpackId,
+  onApplied,
+}: {
+  serverId: string;
+  /** Shown as "currently applied" when known; a draft doesn't track it. */
+  appliedModpackId?: string | null;
+  onApplied: () => void;
+}) {
   const [packs, setPacks] = useState<Modpack[]>([]);
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
@@ -16,13 +29,13 @@ export function ApplyModpack({ server, onApplied }: { server: Server; onApplied:
       .catch(() => {});
   }, []);
 
-  const applied = packs.find((p) => p.id === server.appliedModpackId);
+  const applied = packs.find((p) => p.id === appliedModpackId);
 
   const apply = async () => {
     if (!selected) return;
     setBusy(true);
     try {
-      const r = await api.applyModpack(selected, server.id);
+      const r = await api.applyModpack(selected, serverId);
       if (r.errors.length > 0) {
         toastError(`Applied with errors: ${r.errors.map((e) => e.name).join(', ')}`);
       } else {
@@ -64,8 +77,8 @@ export function ApplyModpack({ server, onApplied }: { server: Server; onApplied:
         </button>
       </div>
       <div className="small muted" style={{ marginTop: 6 }}>
-        Applying replaces this server's mod list with the pack's, then downloads the mods. Takes
-        effect on next start.
+        Applying replaces the mod list with the pack's, then downloads the mods. Takes effect on
+        next start.
       </div>
     </div>
   );

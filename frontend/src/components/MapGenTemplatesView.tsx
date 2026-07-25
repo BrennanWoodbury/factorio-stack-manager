@@ -91,10 +91,11 @@ export function MapGenTemplatesView() {
       <div className="panel">
         <div className="spread">
           <div>
-            <h2 style={{ margin: 0 }}>Map templates</h2>
+            <h2 style={{ margin: 0 }}>World Generation Templates</h2>
             <div className="small muted" style={{ marginTop: 4 }}>
-              Reusable map-generation presets. Pick one when creating a server, or save the current
-              settings from a server's Map gen tab. Export to share; import a shared JSON.
+              Reusable world-generation presets (terrain, resources, enemies). Pick one when
+              creating a server, or save the current settings from a server's Map gen tab. Export
+              to share; import a shared JSON.
             </div>
           </div>
           <div className="row">

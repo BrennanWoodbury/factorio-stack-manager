@@ -185,7 +185,9 @@ It applies the `unraid` label automatically so reports remain searchable in this
   reserved, so a half-finished server can never collide with a real one and never shows up on the
   dashboard. Drafts are listed under "Continue new server", survive a restart, and are pruned
   automatically after they expire. Only **finalize** promotes the row to `lifecycle='active'`,
-  allocating the subdomain and creating the SRV record.
+  allocating the subdomain and creating the SRV record. The mods step can **apply a saved modpack**
+  as well as search the portal, so a templated mod set can be chosen up front rather than rebuilt
+  by hand — the pack downloads into the draft, so **Test & Create** boots the real mod set.
 - **Test & Create:** before finalizing, the wizard can boot the server once in a throwaway
   container and stream the result live (SSE). It reports the actual failure — bad mod, unloadable
   map-gen settings, wrong game version — instead of leaving you to read a crash loop afterwards.
@@ -212,7 +214,7 @@ It applies the `unraid` label automatically so reports remain searchable in this
   config. These **cascade**: saving pushes the new value to every server that hasn't overridden it;
   a server that overrode a setting keeps its own value until you click **"Reset to global default"**
   on that field. New servers start out inheriting everything. Also sets a default **modpack** and
-  **map template** applied to new servers at creation (changeable in the wizard).
+  **world generation template** applied to new servers at creation (changeable in the wizard).
 - **Lifecycle:** start / stop / restart / delete. Delete removes the container, DNS record,
   releases the ports and deletes the data dir.
 - **Console:** live RCON console + player list (over loopback / Docker network only).
@@ -269,11 +271,11 @@ It applies the `unraid` label automatically so reports remain searchable in this
   mods), which populates the sliders and attaches version-correct map settings — or **export** the
   current settings as a shareable string on demand. An **Advanced** section edits the raw
   map-gen-settings JSON directly.
-- **Map templates:** save a map-gen configuration as a named, reusable **template** (e.g. "all ores
-  at 300%") and pick it when creating a server. A template is just a JSON manifest + DB record — no
-  server link — that's **exportable/importable** for sharing. Managed under the **Templates** tab;
-  a couple ("Rich resources", "Peaceful") are seeded by default. "Save as template" is available
-  from any map-gen editor.
+- **World Generation Templates:** save a map-gen configuration as a named, reusable **template**
+  (e.g. "all ores at 300%") and pick it when creating a server. A template is just a JSON manifest +
+  DB record — no server link — that's **exportable/importable** for sharing. Managed under the
+  **World Generation** tab; a couple ("Rich resources", "Peaceful") are seeded by default. "Save as
+  template" is available from any map-gen editor.
 - **Server settings:** edit the full `server-settings.json` (visibility, game password, autosave,
   `allow_commands`, AFK kick, pause rules, non-blocking saving, …) via a structured form plus a
   raw-JSON escape hatch. Each field **inherits the global default** (set on the **Defaults** tab)

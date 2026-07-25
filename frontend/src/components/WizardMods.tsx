@@ -3,12 +3,17 @@ import { api } from '../api';
 import type { ModEntry } from '../types';
 import { toastError, toastSuccess } from '../ui';
 import { ModSearchBox } from './ModSearchBox';
+import { ApplyModpack } from './ApplyModpack';
 
 /**
  * Mods stage for the new-server wizard (Generate flow). A trimmed mod editor pointed at
- * the draft: search + add from the portal, toggle/remove, then "Save & download" writes
- * the mod-list and pulls the zips into the draft's dir — so the Test & Create probe boots
- * with the real mod set. `onSaved` lets the wizard record the chosen mods on the draft.
+ * the draft: apply a saved modpack, and/or search + add from the portal, toggle/remove,
+ * then "Save & download" writes the mod-list and pulls the zips into the draft's dir — so
+ * the Test & Create probe boots with the real mod set. `onSaved` lets the wizard record
+ * the chosen mods on the draft.
+ *
+ * A draft is a server row as far as the mod endpoints are concerned, so applying a
+ * modpack here downloads into the draft's own dir exactly as it would for a real server.
  */
 export function WizardMods({
   draftId,
@@ -22,9 +27,12 @@ export function WizardMods({
 
   const load = useCallback(async () => {
     try {
-      setMods((await api.getMods(draftId)).mods);
+      const { mods: current } = await api.getMods(draftId);
+      setMods(current);
+      return current;
     } catch {
       /* draft may have no mod list yet */
+      return undefined;
     }
   }, [draftId]);
 
@@ -112,6 +120,15 @@ export function WizardMods({
       <div style={{ marginTop: 12 }}>
         <ModSearchBox onAdd={addByName} installed={mods.map((m) => m.name)} />
       </div>
+
+      {/* Applying writes and downloads server-side, so the draft is already saved —
+          hence onSaved here too, without the user pressing Save & download. */}
+      <ApplyModpack
+        serverId={draftId}
+        onApplied={() => {
+          void load().then((applied) => applied && onSaved?.(applied));
+        }}
+      />
       <div className="small muted" style={{ marginTop: 10 }}>
         Added mods need <strong>Save &amp; download</strong> before they're included in the test.
       </div>
