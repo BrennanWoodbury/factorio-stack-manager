@@ -4,6 +4,7 @@ import {
   parseSaveHeader,
   portalModsFor,
   bundledModsFor,
+  gameModeForSave,
   type SaveMod,
 } from '../src/services/saveInspect.js';
 
@@ -135,4 +136,25 @@ test('rejects a buffer that is not a save header', () => {
 
 test('rejects a truncated header', () => {
   assert.throws(() => parseSaveHeader(Buffer.alloc(4)), /truncated/);
+});
+
+test('the game mode a save should run as names the base its mods sit on', () => {
+  // A save owns its mod set, so the mode it adopts must not enforce a bundled set
+  // of its own — it only says which base to read the map-gen sliders against.
+  const sa = parseSaveHeader(
+    buildHeader({
+      mods: [
+        { name: 'base', version: '2.0.77' },
+        { name: 'space-age', version: '2.0.77' },
+        { name: 'krastorio2', version: '1.3.24' },
+      ],
+    }),
+  );
+  assert.equal(gameModeForSave(sa), 'modded_space_age');
+
+  const vanilla = parseSaveHeader(
+    buildHeader({ mods: [{ name: 'base', version: '2.0.77' }, { name: 'krastorio2', version: '1.3.24' }] }),
+  );
+  assert.equal(gameModeForSave(vanilla), 'modded_vanilla');
+  assert.equal(gameModeForSave(parseSaveHeader(buildHeader())), 'modded_vanilla');
 });

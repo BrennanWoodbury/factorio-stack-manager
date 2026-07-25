@@ -10,11 +10,18 @@ import { serverDnsEnabled } from './dnsSettings.js';
 import { RconService } from './rconService.js';
 import { serverFiles, sanitizeName, type ModEntry } from './serverFiles.js';
 import { getFactorioAccount } from './factorioAccount.js';
-import { readSaveHeader, portalModsFor, bundledModsFor, type SaveHeader } from './saveInspect.js';
+import {
+  readSaveHeader,
+  portalModsFor,
+  bundledModsFor,
+  gameModeForSave,
+  type SaveHeader,
+} from './saveInspect.js';
 import {
   ImageProfileService,
   modEnablementFor,
   gameModeIssue,
+  KNOWN_BUNDLED_MODS,
   type ImageProfile,
 } from './imageProfile.js';
 import { describeProblems, validateModSet, type ModProblem } from './modCompat.js';
@@ -81,7 +88,14 @@ export interface UpdateServerInput {
 }
 
 const SUBDOMAIN_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
-const GAME_MODES = ['vanilla', 'space_age', 'space_age_no_quality', 'modded'] as const;
+const GAME_MODES = [
+  'vanilla',
+  'space_age',
+  'space_age_no_quality',
+  'modded',
+  'modded_vanilla',
+  'modded_space_age',
+] as const;
 const cleanGameMode = (m: string | undefined): string =>
   (GAME_MODES as readonly string[]).includes(m ?? '') ? (m as string) : 'space_age';
 
@@ -461,7 +475,12 @@ export class ServerManager {
     id: string,
     buffer: Buffer,
     filename: string,
-  ): Promise<{ saveName: string; gameVersion?: string; mods?: { name: string; version: string }[] }> {
+  ): Promise<{
+    saveName: string;
+    gameVersion?: string;
+    mods?: { name: string; version: string }[];
+    gameMode?: string;
+  }> {
     this.getDraft(id);
     const name = sanitizeName(filename.replace(/\.zip$/i, '')) || 'save';
     serverFiles.ensureDirs(id);
@@ -476,12 +495,22 @@ export class ServerManager {
       patch.saveGameVersion = header.gameVersion;
       patch.saveScenario = header.scenario;
       patch.saveMods = header.mods;
+      // The save decides its own mod set, so the draft adopts a mode that says which
+      // base those mods sit on rather than one that would enforce a bundled set over
+      // them. Without this a save draft keeps the wizard's default (Space Age) and
+      // every uploaded world — vanilla ones included — has the expansion forced on.
+      patch.gameMode = gameModeForSave(header);
     } catch (err) {
       // A save we can't parse is still usable — the probe remains the backstop.
       console.warn(`[draft ${id}] could not read save header: ${(err as Error).message}`);
     }
     await this.updateDraft(id, patch);
-    return { saveName: name, gameVersion: patch.saveGameVersion, mods: patch.saveMods };
+    return {
+      saveName: name,
+      gameVersion: patch.saveGameVersion,
+      mods: patch.saveMods,
+      gameMode: patch.gameMode,
+    };
   }
 
   /** Discard a draft (row + dir). No-op-safe on unknown ids. */
@@ -493,11 +522,15 @@ export class ServerManager {
   }
 
   /**
-   * Finalize a draft into a real server: validate + claim its subdomain, allocate
-   * ports, flip it active, and create its DNS record. (The pre-flight boot probe is
-   * layered on in a later slice; "create without testing" calls this directly.)
+   * Finalize a draft into a real server: install what an uploaded save needs,
+   * validate + claim its subdomain, allocate ports, flip it active, and create its
+   * DNS record. ("Create without testing" calls this directly; the boot probe calls
+   * it once the probe passes.)
    */
-  async finalize(id: string): Promise<ServerRow> {
+  async finalize(
+    id: string,
+    hooks: { downloadMod?: (name: string, version?: string) => Promise<void> } = {},
+  ): Promise<ServerRow> {
     const draft = this.getDraft(id);
     const state: DraftState = draft.draft_state_json
       ? (JSON.parse(draft.draft_state_json) as DraftState)
@@ -505,6 +538,16 @@ export class ServerManager {
     const subdomain = (state.subdomain ?? '').trim();
     this.validateSubdomain(subdomain);
     if (this.repo.getBySubdomain(subdomain)) throw new DuplicateSubdomainError(subdomain);
+
+    // An uploaded save's mods have to be installed on every path that creates a
+    // server from it, not just the one that boots a test first. Factorio does not
+    // error on a save whose mods are missing — it drops them and hosts a gutted
+    // world — so this fails creation loudly instead, before anything is claimed.
+    const saveName = sanitizeName(draft.save_name || 'default');
+    if (state.source === 'save' && serverFiles.saveExists(id, saveName)) {
+      const failures = await this.resolveSaveMods(draft, saveName, {}, hooks);
+      if (failures.length > 0) throw new ValidationError(failures.join('\n'));
+    }
 
     const inUse = await this.docker.hostPortsInUse();
     // Claim ports + flip active atomically.
@@ -620,11 +663,15 @@ export class ServerManager {
    * Make the installed mod set match what an uploaded save actually needs, reading
    * the requirement from the save's own header rather than from a boot log.
    *
-   * Bundled expansion mods are switched on in mod-list.json; everything else is
-   * fetched from the portal pinned to the version recorded in the save. Returns the
-   * list of failures (empty means the save's mods are satisfied) — a mod we can't
-   * fetch is fatal for the probe, because booting anyway would silently drop it and
-   * report a healthy server built on a gutted world.
+   * The header is authoritative for the bundled expansion mods — they're switched on
+   * or off in mod-list.json to match it exactly, so a vanilla world doesn't run with
+   * Space Age forced on. Everything else is fetched from the portal pinned to the
+   * version recorded in the save. Returns the list of failures (empty means the
+   * save's mods are satisfied) — a mod we can't fetch is fatal, because booting
+   * anyway would silently drop it and report a healthy server built on a gutted world.
+   *
+   * Safe to call more than once: a mod already installed at the version the save
+   * wants isn't downloaded again, so the probe and finalize don't duplicate work.
    */
   private async resolveSaveMods(
     row: ServerRow,
@@ -659,20 +706,31 @@ export class ServerManager {
     );
 
     const modList = serverFiles.readModList(id);
-    const setEnabled = (name: string) => {
+    const setEnabled = (name: string, enabled = true) => {
       const e = modList.find((m) => m.name === name);
-      if (e) e.enabled = true;
-      else modList.push({ name, enabled: true });
+      if (e) e.enabled = enabled;
+      else modList.push({ name, enabled });
     };
 
-    // Bundled expansion mods ship in the image — enabling them is all that's needed.
-    for (const name of bundled) {
-      emit.line?.(`Enabling bundled mod "${name}" (required by the save)`);
-      setEnabled(name);
+    // Bundled expansion mods ship in the image, so matching the save is purely a
+    // matter of enablement — including switching off the ones it doesn't use.
+    const wanted = new Set(bundled);
+    for (const name of bundledNames ?? KNOWN_BUNDLED_MODS) {
+      if (name === 'base') continue; // always enabled, never toggled
+      if (wanted.has(name)) emit.line?.(`Enabling bundled mod "${name}" (required by the save)`);
+      setEnabled(name, wanted.has(name));
     }
+
+    // What's already on disk at the version the save asks for. Resolution runs on
+    // both the probe and the create path, and mod zips are big.
+    const installed = new Map(this.mods.installedMods(id).map((m) => [m.name, m.version]));
 
     const failures: string[] = [];
     for (const mod of portal) {
+      if (installed.get(mod.name) === mod.version) {
+        setEnabled(mod.name);
+        continue;
+      }
       if (!hooks.downloadMod) {
         failures.push(`The save needs "${mod.name}" ${mod.version}, which isn't installed.`);
         continue;
@@ -824,6 +882,31 @@ export class ServerManager {
       console.error(`[manager] auto-restart of ${id} failed: ${(err as Error).message}`),
     );
     return true;
+  }
+
+  /** How many servers currently have a running container. */
+  async runningCount(): Promise<number> {
+    return (await this.docker.runningServerIds()).length;
+  }
+
+  /**
+   * Restart every currently-running server. Used when an admin explicitly opts in
+   * (after a global-settings save) to applying the change immediately, rather than
+   * waiting for each server's own next (re)start to pick it up.
+   */
+  async restartRunning(): Promise<{ restarted: string[]; failed: { id: string; error: string }[] }> {
+    const ids = await this.docker.runningServerIds();
+    const restarted: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+    for (const id of ids) {
+      try {
+        await this.restart(id);
+        restarted.push(id);
+      } catch (err) {
+        failed.push({ id, error: (err as Error).message });
+      }
+    }
+    return { restarted, failed };
   }
 
   /**
@@ -1054,9 +1137,13 @@ export class ServerManager {
    * So the bind is the check. On a conflict the offending port is blocked, a
    * replacement claimed, and the attempt repeated — carrying the new game port into
    * DNS, since the SRV record advertises it.
+   *
+   * The scan excludes this server's own container: on a restart it's still running
+   * at this point (removed further down, in this same loop), so without the
+   * exclusion its own ports would look "taken" and get moved on every restart.
    */
   private async startWithFreePorts(id: string): Promise<string> {
-    const blocked = new Set(await this.docker.hostPortsInUse());
+    const blocked = new Set(await this.docker.hostPortsInUse(id));
     for (let attempt = 1; ; attempt++) {
       let row = this.get(id);
       // Ports another container already publishes are known-bad before we try.

@@ -179,6 +179,12 @@ const MODE_WANTS: Record<string, readonly string[] | null> = {
   space_age: ['space-age', 'quality'],
   space_age_no_quality: ['space-age'],
   modded: null, // the applied modpack owns the mod list
+  // "+ mods" modes: something other than a game mode decides the bundled set — an
+  // uploaded save's own header, or a modpack — so enforcing one here would fight it.
+  // They differ from `modded` only in saying which base the mods sit on, which is
+  // what the map-gen slider set and the planet list key off.
+  modded_vanilla: null,
+  modded_space_age: null,
 };
 
 /**

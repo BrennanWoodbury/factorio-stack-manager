@@ -1,34 +1,46 @@
-import { useCallback, useEffect, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { api } from '../api';
 import type { ModEntry } from '../types';
 import { toastError, toastSuccess } from '../ui';
 import { ModSearchBox } from './ModSearchBox';
 import { ApplyModpack } from './ApplyModpack';
 
+/** Imperative handle so the wizard can force a save (e.g. before finalizing a draft). */
+export interface WizardModsHandle {
+  save: () => Promise<void>;
+}
+
 /**
  * Mods stage for the new-server wizard (Generate flow). A trimmed mod editor pointed at
  * the draft: apply a saved modpack, and/or search + add from the portal, toggle/remove,
  * then "Save & download" writes the mod-list and pulls the zips into the draft's dir — so
  * the Test & Create probe boots with the real mod set. `onSaved` lets the wizard record
- * the chosen mods on the draft.
+ * the chosen mods on the draft, and `onDirtyChange` reports whether local edits (adds,
+ * removes, toggles) haven't been saved & downloaded yet, so the wizard can prompt before
+ * creating.
  *
  * A draft is a server row as far as the mod endpoints are concerned, so applying a
  * modpack here downloads into the draft's own dir exactly as it would for a real server.
  */
-export function WizardMods({
-  draftId,
-  onSaved,
-}: {
-  draftId: string;
-  onSaved?: (mods: ModEntry[]) => void;
-}) {
+export const WizardMods = forwardRef<
+  WizardModsHandle,
+  {
+    draftId: string;
+    onSaved?: (mods: ModEntry[]) => void;
+    onDirtyChange?: (dirty: boolean) => void;
+  }
+>(function WizardMods({ draftId, onSaved, onDirtyChange }, ref) {
   const [mods, setMods] = useState<ModEntry[]>([]);
   const [saving, setSaving] = useState(false);
+  // Last mod list actually saved & downloaded, so we can tell whether `mods` has drifted
+  // from it (added/removed/toggled without hitting "Save & download").
+  const savedRef = useRef<ModEntry[]>([]);
 
   const load = useCallback(async () => {
     try {
       const { mods: current } = await api.getMods(draftId);
       setMods(current);
+      savedRef.current = current;
       return current;
     } catch {
       /* draft may have no mod list yet */
@@ -40,6 +52,10 @@ export function WizardMods({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    onDirtyChange?.(JSON.stringify(mods) !== JSON.stringify(savedRef.current));
+  }, [mods, onDirtyChange]);
+
   const addByName = (name: string) => {
     if (!name || mods.some((m) => m.name === name)) return;
     setMods((m) => [...m, { name, enabled: true }]);
@@ -50,6 +66,7 @@ export function WizardMods({
     try {
       const r = await api.putMods(draftId, mods);
       setMods(r.mods);
+      savedRef.current = r.mods;
       onSaved?.(r.mods);
       if (r.errors.length > 0) {
         toastError(`Some mods failed: ${r.errors.map((e) => `${e.name} (${e.error})`).join('; ')}`);
@@ -62,10 +79,13 @@ export function WizardMods({
       }
     } catch (err) {
       toastError((err as Error).message);
+      throw err;
     } finally {
       setSaving(false);
     }
   };
+
+  useImperativeHandle(ref, () => ({ save }));
 
   return (
     <div>
@@ -134,4 +154,4 @@ export function WizardMods({
       </div>
     </div>
   );
-}
+});
