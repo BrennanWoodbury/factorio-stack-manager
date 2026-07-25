@@ -34,6 +34,17 @@ a { color: var(--accent-2); }
 .app-header .brand { display: flex; align-items: center; gap: 10px; }
 .container { max-width: 1000px; margin: 0 auto; padding: 22px; }
 
+.app-footer {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  padding: 16px 22px 22px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.app-footer a { color: var(--muted); }
+.app-footer a:hover { color: var(--text); }
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
