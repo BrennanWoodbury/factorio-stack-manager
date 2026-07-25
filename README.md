@@ -600,6 +600,24 @@ Two fixes, in order of preference:
    DNS server. Depending on what that resolver supports, this might be a plain A-record override,
    a CNAME, or a DNAME redirect — any of them work as long as only the shared host record is
    affected, not the public zone.
+3. **No local DNS server? Edit the hosts file on each device that needs it.** This only fixes
+   *that one machine* (not every device on the LAN like option 2), and doesn't track a changing
+   LAN IP automatically, but it's the fastest fix for a single admin or player machine.
+   [`scripts/add-host-entry.sh`](scripts/add-host-entry.sh) (Linux/macOS, run with `sudo`) and
+   [`scripts/add-host-entry.ps1`](scripts/add-host-entry.ps1) (Windows, run from an elevated
+   PowerShell prompt) add/update the entry idempotently — safe to re-run if the LAN IP changes:
+
+   ```bash
+   sudo ./scripts/add-host-entry.sh factorio-tools-manager.mydomain.com 192.168.1.50
+   ```
+
+   ```powershell
+   .\scripts\add-host-entry.ps1 -HostRecord factorio-tools-manager.mydomain.com -LanIp 192.168.1.50
+   ```
+
+   Both take the *generated host record* (not the per-server subdomain) and the host's LAN IP.
+   Review a script before running it with elevated privileges, as with any script that edits
+   system files.
 
 ---
 
