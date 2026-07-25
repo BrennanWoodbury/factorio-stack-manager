@@ -76,6 +76,15 @@ export class CloudflareClient {
     );
   }
 
+  /** Find every record type at an exact name (used for CNAME collision checks). */
+  async findRecordsByName(name: string): Promise<CloudflareRecord[]> {
+    const params = new URLSearchParams({ name });
+    return this.call<CloudflareRecord[]>(
+      'GET',
+      `/zones/${this.zoneId}/dns_records?${params.toString()}`,
+    );
+  }
+
   async createSrv(data: SrvData, ttl = 60): Promise<CloudflareRecord> {
     return this.call<CloudflareRecord>('POST', `/zones/${this.zoneId}/dns_records`, {
       type: 'SRV',

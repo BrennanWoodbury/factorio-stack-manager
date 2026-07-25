@@ -72,9 +72,12 @@ server it creates is guaranteed reachable.
 ### 2. Cloudflare DNS (optional — configured in the dashboard, not env)
 
 Skip this to run without DNS (players connect by `IP:port`). To enable automatic SRV + DDNS,
-open the dashboard → **DNS / Cloudflare settings** and enter your server domain, host record, Zone
-ID and API token. The server domain may be the selected zone (`example.com`) or a namespace beneath
-it (`games.example.com`). **Test configuration** validates the unsaved values without changing DNS;
+open the dashboard → **DNS / Cloudflare settings** and enter your server domain, Zone ID and API
+token. The server domain may be the selected zone (`example.com`) or a namespace beneath it
+(`games.example.com`). The shared DDNS target is generated as
+`factorio-tools-manager.<server-domain>`; each instance remains reachable at
+`<instance>.<server-domain>`. **Test configuration** validates the unsaved values, resolves the
+read-only zone name from the Zone ID, and checks for a conflicting CNAME without changing DNS;
 **Save & enable DNS** then stores them in the app database and takes effect immediately — no restart,
 nothing in `.env`. To get the values:
 
@@ -168,9 +171,9 @@ It applies the `unraid` label automatically so reports remain searchable in this
 | `SKIP_DB_BACKUP`        |          | `false`                        | Migrate without snapshotting the DB first (makes the upgrade one-way) |
 | `APP_VERSION`           |          | `dev`                          | Build identity; stamped by CI, shown on the dashboard |
 
-> **DNS / Cloudflare is not configured via env** — set the server domain, host record, Zone ID, API
-> token, DDNS interval and IP-check URL in the dashboard (**DNS / Cloudflare settings**). They're
-> stored in the database.
+> **DNS / Cloudflare is not configured via env** — set the server domain, Zone ID, API token, DDNS
+> interval and IP-check URL in the dashboard (**DNS / Cloudflare settings**). The host record is
+> derived automatically; settings are stored in the database.
 
 ---
 

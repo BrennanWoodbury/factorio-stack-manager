@@ -16,6 +16,7 @@ const disabledDns: DnsSettings = {
   baseDomain: '',
   hostRecordName: '',
   cloudflareZoneId: '',
+  cloudflareZoneName: '',
   hasToken: false,
   ddnsIntervalSeconds: 300,
   ipCheckUrl: 'https://api.ipify.org',
@@ -33,8 +34,9 @@ beforeEach(() => {
     dns: {
       ...disabledDns,
       baseDomain: 'games.example.com',
-      hostRecordName: 'host.games.example.com',
+      hostRecordName: 'factorio-tools-manager.games.example.com',
       cloudflareZoneId: 'zone-123',
+      cloudflareZoneName: 'example.com',
       hasToken: true,
       enabled: true,
     },
@@ -47,7 +49,7 @@ beforeEach(() => {
       records: [
         {
           type: 'A',
-          name: 'host.games.example.com',
+          name: 'factorio-tools-manager.games.example.com',
           ok: true,
           action: 'updated',
         },
@@ -72,9 +74,6 @@ describe('DnsSettingsPanel', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Server domain' }), {
       target: { value: 'games.example.com' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Host record' }), {
-      target: { value: 'host.games.example.com' },
-    });
     fireEvent.change(screen.getByRole('textbox', { name: 'Cloudflare Zone ID' }), {
       target: { value: 'zone-123' },
     });
@@ -86,13 +85,18 @@ describe('DnsSettingsPanel', () => {
     await waitFor(() =>
       expect(apiMocks.testDns).toHaveBeenCalledWith({
         baseDomain: 'games.example.com',
-        hostRecordName: 'host.games.example.com',
         cloudflareZoneId: 'zone-123',
         cloudflareToken: 'candidate-token',
         ipCheckUrl: 'https://api.ipify.org',
       }),
     );
-    expect(await screen.findByText('✓ Zone example.com; public IP 203.0.113.42')).toBeTruthy();
+    expect(await screen.findByText('✓ Public IP 203.0.113.42')).toBeTruthy();
+    expect((screen.getByRole('textbox', { name: 'Generated host record' }) as HTMLInputElement).value)
+      .toBe('factorio-tools-manager.games.example.com');
+    expect((screen.getByRole('textbox', { name: 'Cloudflare Zone ID' }) as HTMLInputElement).value)
+      .toBe('zone-123');
+    expect((screen.getByRole('textbox', { name: 'Cloudflare zone name' }) as HTMLInputElement).value)
+      .toBe('example.com');
     expect((save as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(save);
@@ -112,8 +116,9 @@ describe('DnsSettingsPanel', () => {
       dns: {
         ...disabledDns,
         baseDomain: 'games.example.com',
-        hostRecordName: 'host.games.example.com',
+        hostRecordName: 'factorio-tools-manager.games.example.com',
         cloudflareZoneId: 'zone-123',
+        cloudflareZoneName: 'example.com',
         hasToken: true,
         enabled: true,
       },
@@ -124,7 +129,7 @@ describe('DnsSettingsPanel', () => {
 
     await waitFor(() => expect(apiMocks.reconcileDns).toHaveBeenCalledOnce());
     expect(await screen.findByText('Healthy')).toBeTruthy();
-    expect(screen.getAllByText(/host\.games\.example\.com/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/factorio-tools-manager\.games\.example\.com/).length).toBeGreaterThan(0);
     expect(screen.getByText(/updated/)).toBeTruthy();
   });
 });

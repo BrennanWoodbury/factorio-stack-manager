@@ -5,14 +5,14 @@ import { run, toastError, toastSuccess } from '../ui';
 
 /**
  * Cloudflare / DNS settings, edited entirely here (nothing in env). Configuring
- * server domain, host record, zone ID and API token enables automatic SRV records
- * per server plus the DDNS A-record sync.
+ * server domain, zone ID and API token enables automatic SRV records per server
+ * plus the DDNS A-record sync. The shared A-record name is derived automatically.
  */
 export function DnsSettingsPanel() {
   const [dns, setDns] = useState<DnsSettings | null>(null);
   const [baseDomain, setBaseDomain] = useState('');
-  const [hostRecordName, setHostRecordName] = useState('');
   const [zoneId, setZoneId] = useState('');
+  const [zoneName, setZoneName] = useState('');
   const [token, setToken] = useState('');
   const [interval, setIntervalSecs] = useState(300);
   const [ipCheckUrl, setIpCheckUrl] = useState('');
@@ -26,7 +26,6 @@ export function DnsSettingsPanel() {
   const fingerprint = (hasStoredToken: boolean) =>
     JSON.stringify([
       baseDomain.trim().toLowerCase().replace(/\.$/, ''),
-      hostRecordName.trim().toLowerCase().replace(/\.$/, ''),
       zoneId.trim(),
       token.trim() || (hasStoredToken ? '<stored>' : ''),
       ipCheckUrl.trim(),
@@ -37,8 +36,8 @@ export function DnsSettingsPanel() {
       const { dns, reconciliation } = await api.getDns();
       setDns(dns);
       setBaseDomain(dns.baseDomain);
-      setHostRecordName(dns.hostRecordName);
       setZoneId(dns.cloudflareZoneId);
+      setZoneName(dns.cloudflareZoneName);
       setIntervalSecs(dns.ddnsIntervalSeconds);
       setIpCheckUrl(dns.ipCheckUrl);
       setToken('');
@@ -48,7 +47,6 @@ export function DnsSettingsPanel() {
         dns.enabled
           ? JSON.stringify([
               dns.baseDomain,
-              dns.hostRecordName,
               dns.cloudflareZoneId,
               '<stored>',
               dns.ipCheckUrl,
@@ -70,7 +68,6 @@ export function DnsSettingsPanel() {
     setBusy(true);
     const patch: Record<string, unknown> = {
       baseDomain,
-      hostRecordName,
       cloudflareZoneId: zoneId,
       ddnsIntervalSeconds: interval,
       ipCheckUrl,
@@ -99,15 +96,15 @@ export function DnsSettingsPanel() {
     try {
       const candidate: Record<string, unknown> = {
         baseDomain,
-        hostRecordName,
         cloudflareZoneId: zoneId,
         ipCheckUrl,
       };
       if (token.trim()) candidate.cloudflareToken = token.trim();
       const r = await api.testDns(candidate);
+      setZoneName(r.zoneName ?? '');
       if (r.ok) {
         setValidatedFingerprint(fingerprint(dns.hasToken));
-        setTestResult(`✓ Zone ${r.zoneName}; public IP ${r.publicIp}`);
+        setTestResult(`✓ Public IP ${r.publicIp}`);
         toastSuccess('DNS configuration test passed');
       } else {
         setValidatedFingerprint(null);
@@ -137,7 +134,6 @@ export function DnsSettingsPanel() {
 
   const configurationComplete = Boolean(
     baseDomain.trim() &&
-      hostRecordName.trim() &&
       zoneId.trim() &&
       (token.trim() || dns.hasToken) &&
       ipCheckUrl.trim(),
@@ -179,18 +175,20 @@ export function DnsSettingsPanel() {
           </div>
         </div>
         <div className="grow">
-          <label>Host record (SRV target + A record)</label>
+          <label>Generated host record (SRV target + A record)</label>
           <input
             className="mono"
-            aria-label="Host record"
-            placeholder="host.mydomain.com"
-            value={hostRecordName}
-            onChange={(e) => setHostRecordName(e.target.value)}
+            aria-label="Generated host record"
+            value={derivedHostRecord(baseDomain)}
+            readOnly
           />
+          <div className="small muted" style={{ marginTop: 4 }}>
+            Generated automatically and shared by every server instance.
+          </div>
         </div>
       </div>
 
-      <DnsRecordsPreview baseDomain={baseDomain} hostRecordName={hostRecordName} />
+      <DnsRecordsPreview baseDomain={baseDomain} />
 
       <div className="row">
         <div className="grow">
@@ -199,9 +197,25 @@ export function DnsSettingsPanel() {
             className="mono"
             aria-label="Cloudflare Zone ID"
             value={zoneId}
-            onChange={(e) => setZoneId(e.target.value)}
+            onChange={(e) => {
+              setZoneId(e.target.value);
+              setZoneName('');
+            }}
           />
         </div>
+        <div className="grow">
+          <label>Cloudflare zone name (verified)</label>
+          <input
+            className="mono"
+            aria-label="Cloudflare zone name"
+            placeholder="Populated after a successful test"
+            value={zoneName}
+            readOnly
+          />
+        </div>
+      </div>
+
+      <div className="row">
         <div className="grow">
           <label>API token {dns.hasToken ? '(set — blank keeps it)' : '(not set)'}</label>
           <input
@@ -212,6 +226,7 @@ export function DnsSettingsPanel() {
             onChange={(e) => setToken(e.target.value)}
           />
         </div>
+        <div className="grow" />
       </div>
 
       <div
@@ -331,16 +346,15 @@ export function DnsSettingsPanel() {
 }
 
 /**
- * Live preview of the DNS records that will be created, driven by the base domain
- * and host record currently typed into the form — updates as you type.
+ * Live preview of the DNS records that will be created. The shared host target
+ * is derived from the base domain and updates as the user types.
  */
-function DnsRecordsPreview({
-  baseDomain,
-  hostRecordName,
-}: {
-  baseDomain: string;
-  hostRecordName: string;
-}) {
+const derivedHostRecord = (baseDomain: string) => {
+  const base = baseDomain.trim().toLowerCase().replace(/\.$/, '');
+  return base ? `factorio-tools-manager.${base}` : '';
+};
+
+function DnsRecordsPreview({ baseDomain }: { baseDomain: string }) {
   const base = baseDomain.trim().toLowerCase();
   if (!base) {
     return (
@@ -349,7 +363,7 @@ function DnsRecordsPreview({
       </div>
     );
   }
-  const host = hostRecordName.trim().toLowerCase() || `host.${base}`;
+  const host = derivedHostRecord(base);
   return (
     <div className="small muted" style={{ margin: '4px 0 12px', lineHeight: 1.7 }}>
       <div>

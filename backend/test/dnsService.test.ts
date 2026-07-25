@@ -35,7 +35,6 @@ function insertServer(
 function configureDns(db: ReturnType<typeof openDb>): void {
   setDnsSettings(db, {
     baseDomain: 'games.example.com',
-    hostRecordName: 'host.games.example.com',
     cloudflareZoneId: 'zone-123',
     cloudflareToken: 'token-123',
     ipCheckUrl: 'https://ip.example.test',
@@ -62,7 +61,6 @@ test('tests an unsaved subdomain configuration without persisting it', async () 
 
   const result = await new DnsService(db).testConnection({
     baseDomain: 'games.example.com',
-    hostRecordName: 'host.games.example.com',
     cloudflareZoneId: 'zone-123',
     cloudflareToken: 'candidate-token',
     ipCheckUrl: 'https://ip.example.test',
@@ -78,6 +76,54 @@ test('tests an unsaved subdomain configuration without persisting it', async () 
   db.close();
 });
 
+test('derives the shared host record from the server domain and ignores the legacy value', () => {
+  const db = openDb(':memory:');
+  kvSet(db, 'dns_base_domain', 'factorio.example.com');
+  kvSet(db, 'dns_host_record', 'legacy.example.com');
+
+  assert.equal(
+    getDnsSettings(db).hostRecordName,
+    'factorio-tools-manager.factorio.example.com',
+  );
+  db.close();
+});
+
+test('reports a generated-host CNAME collision during the read-only test', async () => {
+  const db = openDb(':memory:');
+  let checkedPublicIp = false;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/zones/zone-123')) {
+      return cloudflareResult({ id: 'zone-123', name: 'example.com', status: 'active' });
+    }
+    if (url.includes('/dns_records?')) {
+      return cloudflareResult([
+        {
+          id: 'existing-cname',
+          type: 'CNAME',
+          name: 'factorio-tools-manager.games.example.com',
+          content: 'elsewhere.example.net',
+        },
+      ]);
+    }
+    checkedPublicIp = true;
+    return new Response('203.0.113.42');
+  };
+
+  const result = await new DnsService(db).testConnection({
+    baseDomain: 'games.example.com',
+    cloudflareZoneId: 'zone-123',
+    cloudflareToken: 'candidate-token',
+    ipCheckUrl: 'https://ip.example.test',
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.zoneName, 'example.com');
+  assert.match(result.error ?? '', /conflicts with an existing CNAME/);
+  assert.equal(checkedPublicIp, false);
+  db.close();
+});
+
 test('rejects server names outside the selected Cloudflare zone', async () => {
   const db = openDb(':memory:');
   let calls = 0;
@@ -88,7 +134,6 @@ test('rejects server names outside the selected Cloudflare zone', async () => {
 
   const result = await new DnsService(db).testConnection({
     baseDomain: 'games.invalid.test',
-    hostRecordName: 'host.games.invalid.test',
     cloudflareZoneId: 'zone-123',
     cloudflareToken: 'candidate-token',
     ipCheckUrl: 'https://ip.example.test',
@@ -117,7 +162,6 @@ test('uses the stored masked token when testing other edits', async () => {
 
   const result = await new DnsService(db).testConnection({
     baseDomain: 'example.com',
-    hostRecordName: 'host.example.com',
     cloudflareZoneId: 'zone-123',
     ipCheckUrl: 'https://ip.example.test',
   });
@@ -150,7 +194,7 @@ test('reconciliation backfills every active server and the shared A record', asy
   assert.deepEqual(
     result.records.map((record) => [record.type, record.name, record.action]),
     [
-      ['A', 'host.games.example.com', 'created'],
+      ['A', 'factorio-tools-manager.games.example.com', 'created'],
       ['SRV', '_factorio._udp.alpha.games.example.com', 'created'],
       ['SRV', '_factorio._udp.beta.games.example.com', 'created'],
     ],
@@ -179,7 +223,9 @@ test('reconciliation rediscovers records by name and removes stale tracked IDs',
     const method = init?.method ?? 'GET';
     if (url === 'https://ip.example.test') return new Response('203.0.113.42');
     if (url.includes('type=A')) {
-      return cloudflareResult([{ id: 'discovered-a', name: 'host.games.example.com' }]);
+      return cloudflareResult([
+        { id: 'discovered-a', name: 'factorio-tools-manager.games.example.com' },
+      ]);
     }
     if (url.includes('type=SRV')) {
       return cloudflareResult([
@@ -205,6 +251,59 @@ test('reconciliation rediscovers records by name and removes stale tracked IDs',
     'discovered-srv',
   );
   assert.deepEqual(deleted.sort(), ['stale-a', 'stale-srv']);
+  db.close();
+});
+
+test('a partial reconciliation keeps old topology bookkeeping and records', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'alpha', 'alpha', 34197);
+  insertServer(db, 'beta', 'beta', 34198);
+  kvSet(db, 'host_a_record_id', 'old-a');
+  for (const serverId of ['alpha', 'beta']) {
+    db.prepare(
+      `INSERT INTO dns_records (server_id, type, name, cloudflare_record_id, content)
+       VALUES (?, 'SRV', ?, ?, 'old-target')`,
+    ).run(serverId, `old-${serverId}`, `old-${serverId}-srv`);
+  }
+  const deleted: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url === 'https://ip.example.test') return new Response('203.0.113.42');
+    if (url.includes('type=A')) {
+      return cloudflareResult([
+        { id: 'new-a', name: 'factorio-tools-manager.games.example.com' },
+      ]);
+    }
+    if (url.includes('_factorio._udp.alpha')) {
+      return cloudflareResult([
+        { id: 'new-alpha-srv', name: '_factorio._udp.alpha.games.example.com' },
+      ]);
+    }
+    if (url.includes('_factorio._udp.beta')) return cloudflareFailure('temporary failure');
+    if (method === 'PUT') return cloudflareResult({ id: url.split('/').at(-1) });
+    if (method === 'DELETE') {
+      deleted.push(url.split('/').at(-1) ?? '');
+      return cloudflareResult({ id: url.split('/').at(-1) });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const result = await new DnsService(db).reconcile();
+
+  assert.equal(result.ok, false);
+  assert.equal(kvGet(db, 'host_a_record_id'), 'old-a');
+  assert.deepEqual(
+    db
+      .prepare<{ id: string }>(
+        "SELECT cloudflare_record_id AS id FROM dns_records ORDER BY server_id",
+      )
+      .all()
+      .map((row) => row.id),
+    ['old-alpha-srv', 'old-beta-srv'],
+  );
+  assert.deepEqual(deleted, []);
   db.close();
 });
 
@@ -235,7 +334,6 @@ test('failed activation preserves stored settings and removes newly-created reco
     () =>
       new DnsService(db).activateSettings({
         baseDomain: 'games.example.com',
-        hostRecordName: 'host.games.example.com',
         cloudflareZoneId: 'zone-123',
         cloudflareToken: 'token-123',
         ipCheckUrl: 'https://ip.example.test',
@@ -279,13 +377,13 @@ test('successful topology change swaps bookkeeping and removes old-zone records'
 
   const activated = await new DnsService(db).activateSettings({
     baseDomain: 'games.new.example',
-    hostRecordName: 'host.games.new.example',
     cloudflareZoneId: 'new-zone',
     cloudflareToken: 'new-token',
   });
 
   assert.equal(activated.reconciliation?.ok, true);
   assert.equal(getDnsSettings(db).cloudflareZoneId, 'new-zone');
+  assert.equal(getDnsSettings(db).cloudflareZoneName, 'new.example');
   assert.equal(kvGet(db, 'host_a_record_id'), 'new-a');
   assert.equal(
     db.prepare<{ id: string }>(
