@@ -4,7 +4,7 @@ import { kvGet, kvSet, type DB } from '../db/index.js';
 import type { ServerRow, DraftState } from '../db/models.js';
 import { ServersRepo } from '../db/serversRepo.js';
 import { PortAllocator } from './portAllocator.js';
-import { DockerService, containerStatusLabel } from './dockerService.js';
+import { DockerService, containerStatusLabel, conflictingHostPorts } from './dockerService.js';
 import { DnsService } from './dnsService.js';
 import { serverDnsEnabled } from './dnsSettings.js';
 import { RconService } from './rconService.js';
@@ -84,6 +84,13 @@ const SUBDOMAIN_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const GAME_MODES = ['vanilla', 'space_age', 'space_age_no_quality', 'modded'] as const;
 const cleanGameMode = (m: string | undefined): string =>
   (GAME_MODES as readonly string[]).includes(m ?? '') ? (m as string) : 'space_age';
+
+/**
+ * How many times a start will move to a different port before giving up. Each
+ * attempt costs a container create, and a range this full is a real problem the
+ * user should hear about rather than have papered over.
+ */
+const MAX_PORT_ATTEMPTS = 5;
 
 // Valid Docker image tag (also allow empty to mean "use the global default").
 const TAG_RE = /^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$/;
@@ -240,11 +247,15 @@ export class ServerManager {
       draft_state_json: null,
     };
 
+    // Ports other containers already publish, so a fresh server doesn't get handed
+    // one that would fail to bind. Fetched before the transaction, which is sync.
+    const inUse = await this.docker.hostPortsInUse();
+
     // Phase 1: atomic DB write — insert row and claim ports together, so a port
     // is never claimed without a server, nor a server left without ports.
     const persist = this.db.transaction((): ServerRow => {
       this.repo.insert(baseRow);
-      const { gamePort, rconPort } = this.allocator.allocatePair(id);
+      const { gamePort, rconPort } = this.allocator.allocatePair(id, inUse);
       this.db
         .prepare('UPDATE servers SET game_port = ?, rcon_port = ? WHERE id = ?')
         .run(gamePort, rconPort, id);
@@ -461,9 +472,10 @@ export class ServerManager {
     this.validateSubdomain(subdomain);
     if (this.repo.getBySubdomain(subdomain)) throw new DuplicateSubdomainError(subdomain);
 
+    const inUse = await this.docker.hostPortsInUse();
     // Claim ports + flip active atomically.
     this.db.transaction(() => {
-      const { gamePort, rconPort } = this.allocator.allocatePair(id);
+      const { gamePort, rconPort } = this.allocator.allocatePair(id, inUse);
       this.repo.promoteToActive(id, subdomain, gamePort, rconPort);
     })();
     const row = this.repo.getById(id)!;
@@ -978,16 +990,81 @@ export class ServerManager {
     // Effective whitelist / admin list = global ∪ per-server. Written each start.
     serverFiles.writeWhitelist(id, this.effectiveWhitelist(id));
     serverFiles.writeAdminlist(id, this.effectiveAdminlist(id));
-    await this.docker.remove(id);
-    const containerId = await this.docker.createContainer(
-      row,
-      serverFiles.hostDir(id),
-      getFactorioAccount(this.db),
-    );
-    await this.docker.start(id);
+    const containerId = await this.startWithFreePorts(id);
     this.repo.setStatus(id, 'running', containerId);
     // Record intent so the server is resumed if the manager restarts.
     this.repo.setDesiredState(id, 'running');
+  }
+
+  /**
+   * Create and start the container, moving off any port the host refuses.
+   *
+   * The allocator's table only records what this manager handed out. A Factorio
+   * server someone runs outside the tool — another container, or a native process
+   * — holds a real port that we would otherwise assign and only discover at start,
+   * as `Bind for 0.0.0.0:34197 failed: port is already allocated`. Nothing short of
+   * binding can tell us: the manager sits in its own network namespace, so probing
+   * from here answers a different question.
+   *
+   * So the bind is the check. On a conflict the offending port is blocked, a
+   * replacement claimed, and the attempt repeated — carrying the new game port into
+   * DNS, since the SRV record advertises it.
+   */
+  private async startWithFreePorts(id: string): Promise<string> {
+    const blocked = new Set(await this.docker.hostPortsInUse());
+    for (let attempt = 1; ; attempt++) {
+      let row = this.get(id);
+      // Ports another container already publishes are known-bad before we try.
+      for (const [kind, port] of [
+        ['game', row.game_port],
+        ['rcon', row.rcon_port],
+      ] as const) {
+        if (blocked.has(port)) await this.movePort(row, kind, blocked);
+      }
+      row = this.get(id);
+
+      await this.docker.remove(id);
+      const containerId = await this.docker.createContainer(
+        row,
+        serverFiles.hostDir(id),
+        getFactorioAccount(this.db),
+      );
+      try {
+        await this.docker.start(id);
+        return containerId;
+      } catch (err) {
+        const conflicts = conflictingHostPorts(err);
+        if (conflicts.length === 0 || attempt >= MAX_PORT_ATTEMPTS) throw err;
+        for (const port of conflicts) blocked.add(port);
+        console.warn(
+          `[manager] ${id}: host port(s) ${conflicts.join(', ')} taken by something else; ` +
+            'reallocating',
+        );
+      }
+    }
+  }
+
+  /**
+   * Move one of a server's ports out of the way and keep everything that quotes it
+   * in step. Returns the new port.
+   */
+  private async movePort(
+    row: ServerRow,
+    kind: 'game' | 'rcon',
+    blocked: ReadonlySet<number>,
+  ): Promise<number> {
+    const port = this.allocator.reallocate(row.id, kind, blocked);
+    this.repo.update(row.id, { [kind === 'game' ? 'game_port' : 'rcon_port']: port } as never);
+    if (kind === 'game') {
+      // The SRV record advertises the port, so a silent change would leave every
+      // player connecting by hostname pointed at a port nothing listens on.
+      try {
+        await this.dns.updateServerSrv(this.get(row.id));
+      } catch (err) {
+        console.warn(`[manager] ${row.id}: SRV update after port change failed: ${(err as Error).message}`);
+      }
+    }
+    return port;
   }
 
   /**
