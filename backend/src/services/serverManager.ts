@@ -1009,9 +1009,13 @@ export class ServerManager {
    * So the bind is the check. On a conflict the offending port is blocked, a
    * replacement claimed, and the attempt repeated — carrying the new game port into
    * DNS, since the SRV record advertises it.
+   *
+   * The scan excludes this server's own container: on a restart it's still running
+   * at this point (removed further down, in this same loop), so without the
+   * exclusion its own ports would look "taken" and get moved on every restart.
    */
   private async startWithFreePorts(id: string): Promise<string> {
-    const blocked = new Set(await this.docker.hostPortsInUse());
+    const blocked = new Set(await this.docker.hostPortsInUse(id));
     for (let attempt = 1; ; attempt++) {
       let row = this.get(id);
       // Ports another container already publishes are known-bad before we try.
