@@ -33,6 +33,11 @@ services:
       # unset, and the literal default below is unchanged, so installs that never
       # set either variable keep using the same data directory after upgrading.
       DATA_DIR: ${FSM_DATA_DIR:-${FTM_DATA_DIR:-/opt/factorio-tools-manager}}
+      # Passed through as-is (not just folded into DATA_DIR above) so the manager
+      # can tell whether *only* the pre-rebrand name is set and log a deprecation
+      # warning once at startup — same as any other renamed variable.
+      FSM_DATA_DIR: ${FSM_DATA_DIR:-}
+      FTM_DATA_DIR: ${FTM_DATA_DIR:-}
 
       # --- Port pools (must match what you forwarded on the router) ---
       GAME_PORT_RANGE: ${GAME_PORT_RANGE:-34197-34297}

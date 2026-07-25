@@ -22,6 +22,15 @@ import { errorHandler } from './middleware/errorHandler.js';
 async function main() {
   const ctx = buildContext(config);
 
+  // FTM_DATA_DIR is the pre-rebrand name for FSM_DATA_DIR; still honored (compose
+  // resolves it into DATA_DIR either way), but every renamed variable in this
+  // project keeps working with a startup warning, not silently.
+  if (process.env.FTM_DATA_DIR && !process.env.FSM_DATA_DIR) {
+    console.warn(
+      '[startup] FTM_DATA_DIR is the old name for FSM_DATA_DIR; still honored, but please rename it in your .env',
+    );
+  }
+
   // Best-effort startup reconcile: align each server's stored status with the
   // actual container state (containers may have been started/stopped/crashed
   // while the manager was down).
