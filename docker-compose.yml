@@ -8,8 +8,8 @@
 services:
   manager:
     build: .
-    image: factorio-manager:latest
-    container_name: factorio-manager
+    image: factorio-stack-manager:latest
+    container_name: factorio-stack-manager
     restart: unless-stopped
     # Give the manager time to gracefully stop the Factorio containers on shutdown
     # (only matters when STOP_SERVERS_ON_SHUTDOWN=true).

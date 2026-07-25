@@ -14,9 +14,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const TEMPLATE = 'templates/factorio-tools-manager.xml';
+const TEMPLATE = 'templates/factorio-stack-manager.xml';
 const PROFILE = 'ca_profile.xml';
-const REPO = 'BrennanWoodbury/factorio-tools-manager';
+const REPO = 'BrennanWoodbury/factorio-stack-manager';
 const RAW = `https://raw.githubusercontent.com/${REPO}/main`;
 
 const errors = [];

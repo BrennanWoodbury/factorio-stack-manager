@@ -23,9 +23,9 @@ if (!fs.existsSync(file)) {
   }
 
   for (const required of [
-    'brennanwoodbury/factorio-manager:latest',
-    'https://github.com/BrennanWoodbury/factorio-tools-manager',
-    'https://github.com/BrennanWoodbury/factorio-tools-manager/issues',
+    'brennanwoodbury/factorio-stack-manager:latest',
+    'https://github.com/BrennanWoodbury/factorio-stack-manager',
+    'https://github.com/BrennanWoodbury/factorio-stack-manager/issues',
   ]) {
     if (!body.includes(required)) fail(`missing required reference: ${required}`);
   }
