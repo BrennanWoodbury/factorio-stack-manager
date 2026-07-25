@@ -117,10 +117,10 @@ export interface MapGenTemplate {
   description: string;
   createdAt: string;
   updatedAt: string;
-}
-export interface MapGenTemplateDetail extends MapGenTemplate {
+  /** Included in listings so a settings object can be traced back to its template. */
   settings: MapGenSettings;
 }
+export type MapGenTemplateDetail = MapGenTemplate;
 
 export interface BackupInfo {
   name: string;

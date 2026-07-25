@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { getPath, setPath, levelLabel, previewPlanetsForMode } from './MapGenEditor';
+import { getPath, setPath, levelLabel, previewPlanetsForMode, sameSettings } from './MapGenEditor';
 
 /**
  * These back every slider in the map-gen editor: each one writes through a path
@@ -79,5 +79,39 @@ describe('previewPlanetsForMode', () => {
     const sa = previewPlanetsForMode('space_age').map((p) => p.key);
     expect(sa).toContain('vulcanus');
     expect(previewPlanetsForMode('space_age_no_quality').map((p) => p.key)).toEqual(sa);
+  });
+});
+
+describe('sameSettings', () => {
+  test('key order does not change what settings mean', () => {
+    // The same settings arrive ordered differently from the template endpoint, a
+    // resumed draft, and the editor's own writes; comparing raw JSON would call
+    // those three different presets.
+    expect(sameSettings({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+    expect(
+      sameSettings(
+        { autoplace_controls: { 'iron-ore': { size: 1, frequency: 2 } } },
+        { autoplace_controls: { 'iron-ore': { frequency: 2, size: 1 } } },
+      ),
+    ).toBe(true);
+  });
+
+  test('a real difference at any depth is still a difference', () => {
+    expect(sameSettings({ a: 1 }, { a: 2 })).toBe(false);
+    expect(sameSettings({ a: { b: 1 } }, { a: { b: 1, c: 2 } })).toBe(false);
+    expect(sameSettings({ water: 1 }, {})).toBe(false);
+  });
+
+  test('arrays compare by order, since theirs is meaningful', () => {
+    expect(sameSettings({ a: [1, 2] }, { a: [1, 2] })).toBe(true);
+    expect(sameSettings({ a: [1, 2] }, { a: [2, 1] })).toBe(false);
+  });
+
+  test('null, undefined and missing keys do not collide', () => {
+    expect(sameSettings(null, undefined)).toBe(false);
+    expect(sameSettings({ a: null }, {})).toBe(false);
+    // An explicitly-undefined value is the same as an absent one, which is what
+    // survives a JSON round-trip through the draft.
+    expect(sameSettings({ a: undefined }, {})).toBe(true);
   });
 });
