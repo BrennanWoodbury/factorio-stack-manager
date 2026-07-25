@@ -40,6 +40,14 @@ at once rather than one failure per round-trip.
      any **violations** verbatim. A violation here (e.g. "breaking change requires
      MAJOR=N") means `.version` needs a manual edit before this branch can merge; it
      is not something CI will silently fix.
+   - **"MAJOR decreased" can be a false alarm from staleness, not a real problem.** If
+     the branch was created before a MAJOR bump landed on the base branch, this check
+     compares the branch's old `.version` against the base's new one and reports a
+     decrease — but a real merge takes the base branch's `.version`, not the branch's,
+     so nothing actually regresses. Confirm by checking whether `.version` differs
+     between the branch and the base at all: if the branch never touched `.version`,
+     rebasing (or just merging normally) resolves it with no edit needed. Only treat
+     it as real if the branch itself intentionally changed `.version`.
 
 6. **Report back** — a short table or list: each of the six checks above, pass/fail,
    and for any failure the actual error output (not a paraphrase). End with the
