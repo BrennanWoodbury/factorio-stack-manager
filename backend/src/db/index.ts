@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SCHEMA_SQL } from './schema.js';
 import { runMigrations } from './migrations.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('db');
 
 /**
  * Thin wrapper over Node's built-in synchronous SQLite (`node:sqlite`), exposing
@@ -128,7 +131,7 @@ const KEEP_DB_SNAPSHOTS = 5;
 function snapshotBeforeMigrate(db: DB, filename: string, fromVersion: number): void {
   if (filename === ':memory:') return;
   if (process.env.SKIP_DB_BACKUP === 'true') {
-    console.warn('[db] SKIP_DB_BACKUP=true — migrating without a snapshot');
+    log.warn('SKIP_DB_BACKUP=true — migrating without a snapshot');
     return;
   }
 
@@ -139,7 +142,7 @@ function snapshotBeforeMigrate(db: DB, filename: string, fromVersion: number): v
     fs.mkdirSync(dir, { recursive: true });
     // VACUUM INTO refuses to overwrite, and the timestamp makes collisions moot.
     db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
-    console.log(`[db] snapshot before migrating from v${fromVersion}: ${target}`);
+    log.info(`snapshot before migrating from v${fromVersion}: ${target}`);
   } catch (err) {
     throw new Error(
       `Could not snapshot the database before migrating (${(err as Error).message}). ` +

@@ -8,8 +8,8 @@
 services:
   manager:
     build: .
-    image: factorio-manager:latest
-    container_name: factorio-manager
+    image: factorio-stack-manager:latest
+    container_name: factorio-stack-manager
     restart: unless-stopped
     # Give the manager time to gracefully stop the Factorio containers on shutdown
     # (only matters when STOP_SERVERS_ON_SHUTDOWN=true).
@@ -28,8 +28,16 @@ services:
       # bind mount, below). Because the path is identical on both sides, the
       # backend's default HOST_SERVERS_DIR = DATA_DIR/servers is already correct for
       # the host Docker daemon — so there is nothing else to configure. Override
-      # FTM_DATA_DIR to relocate (e.g. FTM_DATA_DIR=$HOME/.factorio-tools-manager).
-      DATA_DIR: ${FTM_DATA_DIR:-/opt/factorio-tools-manager}
+      # FSM_DATA_DIR to relocate (e.g. FSM_DATA_DIR=$HOME/.factorio-stack-manager).
+      # FTM_DATA_DIR (its pre-rebrand name) is still honored if FSM_DATA_DIR is
+      # unset, and the literal default below is unchanged, so installs that never
+      # set either variable keep using the same data directory after upgrading.
+      DATA_DIR: ${FSM_DATA_DIR:-${FTM_DATA_DIR:-/opt/factorio-tools-manager}}
+      # Passed through as-is (not just folded into DATA_DIR above) so the manager
+      # can tell whether *only* the pre-rebrand name is set and log a deprecation
+      # warning once at startup — same as any other renamed variable.
+      FSM_DATA_DIR: ${FSM_DATA_DIR:-}
+      FTM_DATA_DIR: ${FTM_DATA_DIR:-}
 
       # --- Port pools (must match what you forwarded on the router) ---
       GAME_PORT_RANGE: ${GAME_PORT_RANGE:-34197-34297}
@@ -52,7 +60,7 @@ services:
       # at the SAME absolute path host-side and container-side. This identity makes
       # DATA_DIR/servers a valid host path for the Factorio containers' bind mounts,
       # so HOST_SERVERS_DIR needs no separate configuration.
-      - ${FTM_DATA_DIR:-/opt/factorio-tools-manager}:${FTM_DATA_DIR:-/opt/factorio-tools-manager}
+      - ${FSM_DATA_DIR:-${FTM_DATA_DIR:-/opt/factorio-tools-manager}}:${FSM_DATA_DIR:-${FTM_DATA_DIR:-/opt/factorio-tools-manager}}
     networks:
       - factorio-net
 

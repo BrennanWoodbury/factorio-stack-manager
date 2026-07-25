@@ -134,6 +134,17 @@ export class CloudflareClient {
     });
   }
 
+  /** Used only to leave a redirect behind at a host name the app no longer owns. */
+  async createCname(name: string, target: string, ttl = 60): Promise<CloudflareRecord> {
+    return this.call<CloudflareRecord>('POST', `/zones/${this.zoneId}/dns_records`, {
+      type: 'CNAME',
+      name,
+      content: target,
+      ttl,
+      proxied: false,
+    });
+  }
+
   async deleteRecord(recordId: string): Promise<void> {
     await this.call<{ id: string }>('DELETE', `/zones/${this.zoneId}/dns_records/${recordId}`);
   }

@@ -65,7 +65,7 @@ test('runtime path classification is explicit and excludes non-shipping surfaces
     ['frontend/package-lock.json', 'runtime dependency manifest'],
     ['Dockerfile', 'production image definition'],
     ['docker-compose.yml', 'production Compose configuration'],
-    ['templates/factorio-tools-manager.xml', 'Unraid runtime template'],
+    ['templates/factorio-stack-manager.xml', 'Unraid runtime template'],
     ['backend/test/version.test.ts', null],
     ['frontend/src/App.test.tsx', null],
     ['README.md', null],
@@ -80,7 +80,7 @@ test('runtime path classification is explicit and excludes non-shipping surfaces
 test('release metadata normalization is not mistaken for a runtime change', () => {
   assert.equal(isRuntimeFileChange('backend/package.json', '{"version":"1.2.3","dependencies":{"x":"1"}}', '{"version":"0.0.0","dependencies":{"x":"1"}}'), false);
   assert.equal(isRuntimeFileChange('backend/package.json', '{"version":"0.0.0","dependencies":{"x":"1"}}', '{"version":"0.0.0","dependencies":{"x":"2"}}'), true);
-  assert.equal(isRuntimeFileChange('templates/factorio-tools-manager.xml', '<Date>old</Date><Changes>old</Changes>', '<Date>new</Date><Changes>link</Changes>'), false);
+  assert.equal(isRuntimeFileChange('templates/factorio-stack-manager.xml', '<Date>old</Date><Changes>old</Changes>', '<Date>new</Date><Changes>link</Changes>'), false);
 });
 
 const migrations = (entries) => `

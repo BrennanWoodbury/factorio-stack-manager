@@ -18,9 +18,23 @@ import { globalRouter } from './routes/global.js';
 import { systemRouter } from './routes/system.js';
 import { requireAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { getLogger } from './lib/logger.js';
+
+const startupLog = getLogger('startup');
+const serverLog = getLogger('server');
+const shutdownLog = getLogger('shutdown');
 
 async function main() {
   const ctx = buildContext(config);
+
+  // FTM_DATA_DIR is the pre-rebrand name for FSM_DATA_DIR; still honored (compose
+  // resolves it into DATA_DIR either way), but every renamed variable in this
+  // project keeps working with a startup warning, not silently.
+  if (process.env.FTM_DATA_DIR && !process.env.FSM_DATA_DIR) {
+    startupLog.warn(
+      'FTM_DATA_DIR is the old name for FSM_DATA_DIR; still honored, but please rename it in your .env',
+    );
+  }
 
   // Best-effort startup reconcile: align each server's stored status with the
   // actual container state (containers may have been started/stopped/crashed
@@ -32,7 +46,7 @@ async function main() {
       if (row.status !== status) ctx.repo.setStatus(row.id, status);
     }
   } catch (err) {
-    console.warn(`[startup] status reconcile skipped: ${(err as Error).message}`);
+    startupLog.warn(`status reconcile skipped: ${(err as Error).message}`);
   }
 
   // Seed the built-in "Space Age" modpack once. The kv guard means a user who
@@ -41,7 +55,7 @@ async function main() {
     try {
       ctx.modpacks.seedSpaceAge();
     } catch (err) {
-      console.warn(`[startup] modpack seed skipped: ${(err as Error).message}`);
+      startupLog.warn(`modpack seed skipped: ${(err as Error).message}`);
     }
     kvSet(ctx.db, 'default_modpacks_seeded', '1');
   }
@@ -59,11 +73,11 @@ async function main() {
           .get();
         if (row?.u && row?.t) {
           setFactorioAccount(ctx.db, { username: row.u, token: row.t });
-          console.log('[startup] migrated a per-server Factorio.com account to the global setting');
+          startupLog.info('migrated a per-server Factorio.com account to the global setting');
         }
       }
     } catch (err) {
-      console.warn(`[startup] factorio account migration skipped: ${(err as Error).message}`);
+      startupLog.warn(`factorio account migration skipped: ${(err as Error).message}`);
     }
     kvSet(ctx.db, 'factorio_account_migrated', '1');
   }
@@ -73,7 +87,7 @@ async function main() {
     try {
       ctx.mapGenTemplates.seedDefaults();
     } catch (err) {
-      console.warn(`[startup] map template seed skipped: ${(err as Error).message}`);
+      startupLog.warn(`map template seed skipped: ${(err as Error).message}`);
     }
     kvSet(ctx.db, 'default_map_templates_seeded', '1');
   }
@@ -85,24 +99,32 @@ async function main() {
   await ctx.docker
     .ensureNetwork()
     .then(() => ctx.docker.ensureSelfOnNetwork())
-    .catch((err) => console.warn(`[startup] network setup: ${(err as Error).message}`));
+    .catch((err) => startupLog.warn(`network setup: ${(err as Error).message}`));
 
   if (!config.hostServersDirExplicit) {
     const hostData = await ctx.docker.resolveHostPath(config.dataDir).catch(() => null);
     if (hostData) {
       setHostServersDir(path.join(hostData, 'servers'));
-      console.log(`[startup] host data dir resolved to ${hostData}`);
+      startupLog.info(`host data dir resolved to ${hostData}`);
     }
   }
-  console.log(`[startup] Factorio containers bind-mount from ${getHostServersDir()}`);
+  startupLog.info(`Factorio containers bind-mount from ${getHostServersDir()}`);
+
+  // One-time: repoint everything at the new DNS host label the rebrand introduced,
+  // before the ordinary reconcile/DDNS loop starts touching the same records.
+  try {
+    await ctx.dns.migrateHostLabelRename();
+  } catch (err) {
+    startupLog.warn(`DNS host-label migration failed: ${(err as Error).message}`);
+  }
 
   if (ctx.dns.enabled) {
     void ctx.dns
       .reconcile()
       .then((result) => {
-        if (!result.ok) console.warn('[startup] DNS reconciliation completed with errors');
+        if (!result.ok) startupLog.warn('DNS reconciliation completed with errors');
       })
-      .catch((err) => console.warn(`[startup] DNS reconciliation failed: ${(err as Error).message}`))
+      .catch((err) => startupLog.warn(`DNS reconciliation failed: ${(err as Error).message}`))
       .finally(() => ctx.ddns.start());
   } else ctx.ddns.start();
   ctx.backups.start();
@@ -138,8 +160,8 @@ async function main() {
   app.use(errorHandler);
 
   const server = app.listen(config.port, () => {
-    console.log(`[factorio-manager] listening on :${config.port}`);
-    console.log(`[factorio-manager] DNS ${ctx.dns.enabled ? 'enabled' : 'disabled'}, ` +
+    serverLog.info(`listening on :${config.port}`);
+    serverLog.info(`DNS ${ctx.dns.enabled ? 'enabled' : 'disabled'}, ` +
       `game ports ${config.gamePortRange.join('-')}, rcon ${config.rconPortRange.join('-')}`);
   });
 
@@ -148,22 +170,22 @@ async function main() {
   if (config.resumeServersOnStartup) {
     void ctx.manager
       .resumeDesiredRunning()
-      .catch((err) => console.error(`[startup] resume failed: ${(err as Error).message}`));
+      .catch((err) => startupLog.error(`resume failed: ${(err as Error).message}`));
   }
 
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return; // ignore repeated signals while stopping
     shuttingDown = true;
-    console.log('[factorio-manager] shutting down');
+    shutdownLog.info('shutting down');
     ctx.ddns.stop();
     ctx.backups.stop();
     if (config.stopServersOnShutdown) {
       try {
         const n = await ctx.docker.stopAllManaged(config.shutdownStopTimeoutSecs);
-        console.log(`[shutdown] stopped ${n} managed Factorio container(s)`);
+        shutdownLog.info(`stopped ${n} managed Factorio container(s)`);
       } catch (err) {
-        console.warn(`[shutdown] stopping managed containers failed: ${(err as Error).message}`);
+        shutdownLog.warn(`stopping managed containers failed: ${(err as Error).message}`);
       }
     }
     await ctx.rcon.disconnectAll();
@@ -176,6 +198,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[factorio-manager] fatal:', err);
+  serverLog.error(`fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
   process.exit(1);
 });

@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { IconCache } from './iconCache.js';
 import { localInstallMatches } from './factorioAssets.js';
+import { getLogger } from '../lib/logger.js';
+
+const defaultLog = getLogger('icons');
 
 /**
  * Decides *whether* and *from where* to populate the icon cache for the Factorio
@@ -58,7 +61,7 @@ export class IconSync {
   constructor(private readonly deps: IconSyncDeps) {}
 
   private log(msg: string): void {
-    (this.deps.log ?? ((m: string) => console.log(m)))(`[icons] ${msg}`);
+    (this.deps.log ?? ((m: string) => defaultLog.info(m)))(msg);
   }
 
   /** Cache key a request would use, if a cache for it already exists. */
@@ -191,7 +194,7 @@ export class IconSyncJob {
     if (this.timer) return;
     this.startupTimer = setTimeout(() => void this.runOnce(), this.startupDelayMs);
     this.timer = setInterval(() => void this.runOnce(), this.intervalMs);
-    console.log('[icons] sync scheduled (startup + nightly)');
+    defaultLog.info('sync scheduled (startup + nightly)');
   }
 
   /** Guarded so a slow build can never overlap the next tick. */
@@ -201,7 +204,7 @@ export class IconSyncJob {
     try {
       await this.sync.syncAll();
     } catch (err) {
-      console.warn(`[icons] sync failed: ${(err as Error).message}`);
+      defaultLog.warn(`sync failed: ${(err as Error).message}`);
     } finally {
       this.running = false;
     }

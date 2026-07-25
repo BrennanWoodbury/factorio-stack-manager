@@ -53,7 +53,7 @@ export function classifyPath(file) {
   if (file === 'frontend/index.html' || file.startsWith('frontend/public/')) return 'production frontend asset';
   if (file === 'Dockerfile') return 'production image definition';
   if (file === 'docker-compose.yml') return 'production Compose configuration';
-  if (file === 'templates/factorio-tools-manager.xml') return 'Unraid runtime template';
+  if (file === 'templates/factorio-stack-manager.xml') return 'Unraid runtime template';
   return null;
 }
 
@@ -75,7 +75,7 @@ export function isRuntimeFileChange(file, before, after) {
   if (/^(backend|frontend)\/package-lock\.json$/.test(file)) {
     return neutralManifest(before, true) !== neutralManifest(after, true);
   }
-  if (file === 'templates/factorio-tools-manager.xml') {
+  if (file === 'templates/factorio-stack-manager.xml') {
     const neutral = (text) => text?.replace(/<Changes>[\s\S]*?<\/Changes>/, '<Changes/>').replace(/<Date>[^<]*<\/Date>/, '<Date/>');
     return neutral(before) !== neutral(after);
   }
@@ -229,8 +229,8 @@ export function analyzeRepository({ baseRef, headRef = 'HEAD', reconcile = false
   const afterMigrations = fileAt(headRef, 'backend/src/db/migrations.ts') ?? '';
   const migrations = analyzeMigrations(beforeMigrations, afterMigrations, changedFiles.includes('backend/src/db/schema.ts'));
   const breaking = breakingContracts(
-    { config: fileAt(base, 'backend/src/config.ts'), template: fileAt(base, 'templates/factorio-tools-manager.xml') },
-    { config: fileAt(headRef, 'backend/src/config.ts'), template: fileAt(headRef, 'templates/factorio-tools-manager.xml') },
+    { config: fileAt(base, 'backend/src/config.ts'), template: fileAt(base, 'templates/factorio-stack-manager.xml') },
+    { config: fileAt(headRef, 'backend/src/config.ts'), template: fileAt(headRef, 'templates/factorio-stack-manager.xml') },
   );
   const releaseFiles = changedFiles.filter((file) => {
     if (!classifyPath(file)) return true;

@@ -1,5 +1,8 @@
 import type { DockerService } from './dockerService.js';
 import type { ServerRow } from '../db/models.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('image');
 
 /**
  * What a Factorio image actually ships — read from the image itself rather than
@@ -345,8 +348,8 @@ export class ImageProfileService {
       };
     } catch (err) {
       const version = identity.factorioVersion ?? 'unknown';
-      console.warn(
-        `[image] could not read bundled mods from ${image} (${(err as Error).message}); ` +
+      log.warn(
+        `could not read bundled mods from ${image} (${(err as Error).message}); ` +
           `falling back to built-in knowledge for ${version}`,
       );
       profile = fallbackProfile(identity.id, version);

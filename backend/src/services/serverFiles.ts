@@ -3,6 +3,9 @@ import path from 'node:path';
 import { serversDir, config, getHostServersDir } from '../config.js';
 import type { ServerRow } from '../db/models.js';
 import { NotFoundError, ValidationError } from '../lib/errors.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('serverFiles');
 
 export interface ModEntry {
   name: string;
@@ -75,7 +78,7 @@ export class ServerFilesService {
   /** Advanced server-settings defaults (everything except the managed keys). */
   defaultAdvancedSettings(): Record<string, unknown> {
     return {
-      tags: ['factorio-manager'],
+      tags: ['factorio-stack-manager'],
       visibility: { public: false, lan: true },
       require_user_verification: true,
       max_upload_in_kilobytes_per_second: 0,
@@ -213,7 +216,7 @@ export class ServerFilesService {
       const parsed = JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>;
       if (parsed && typeof parsed === 'object' && !('path_finder' in parsed)) {
         fs.rmSync(p);
-        console.warn(`[serverFiles] removed incomplete map-settings.json for ${serverId}; image will recreate it`);
+        log.warn(`removed incomplete map-settings.json for ${serverId}; image will recreate it`);
       }
     } catch {
       fs.rmSync(p); // corrupt — let the image recopy its example
