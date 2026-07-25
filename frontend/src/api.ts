@@ -2,6 +2,7 @@ import type {
   ApplyResult,
   BackupInfo,
   CatalogEntry,
+  DependencyResolution,
   DnsReconcileResult,
   DnsSettings,
   DraftDto,
@@ -226,6 +227,9 @@ export const api = {
 
   searchMods: (q: string, limit = 25) =>
     req<{ results: CatalogEntry[] }>('GET', `/mods/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  resolveModDependencies: (name: string, installed: string[]) =>
+    req<DependencyResolution>('POST', '/mods/dependencies', { name, installed }),
 
   // modpacks
   listModpacks: () => req<{ modpacks: Modpack[] }>('GET', '/modpacks'),

@@ -60,8 +60,29 @@ const CORE = 'core';
  * Dependency parsing
  * ------------------------------------------------------------------ */
 
+export type DependencyKind = 'required' | 'optional' | 'incompatible';
+
+/** One parsed entry of an info.json `dependencies` array. */
+export interface ModDependency {
+  name: string;
+  kind: DependencyKind;
+  /** `+` — optional, but the game enables it by default. */
+  defaultEnabled: boolean;
+  /** `(?)` — optional and hidden from the game's mod GUI. */
+  hidden: boolean;
+  /** Version constraint exactly as written, e.g. ">= 0.14.0". Never enforced here. */
+  constraint?: string;
+}
+
 /**
- * Names of the *hard* dependencies in an info.json `dependencies` array.
+ * `[prefix] name [constraint]`, where the `(?)` alternative must precede `?` so
+ * the longer prefix wins.
+ */
+const DEPENDENCY_RE = /^(!|\(\?\)|\?|\+|~)?\s*([^<>=\s]+)\s*(.*)$/;
+
+/**
+ * Parse one dependency string. Returns undefined for junk and for `core`, the
+ * engine pseudo-mod that is never a real dependency.
  *
  * Factorio prefixes: `!` incompatible, `?` optional, `(?)` hidden optional,
  * `+` optional but enabled by default (2.1's `space-age` → `quality`), `~`
@@ -69,17 +90,39 @@ const CORE = 'core';
  * requirements. `+` being optional is not just read off the manifest — 2.1.12
  * with quality disabled boots and generates a map.
  */
-export function hardDependencies(deps: unknown): string[] {
+export function parseDependency(raw: unknown): ModDependency | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const m = DEPENDENCY_RE.exec(raw.trim());
+  if (!m) return undefined;
+  const [, prefix, name, rest] = m;
+  if (!name || name === CORE) return undefined;
+  const kind: DependencyKind =
+    prefix === '!' ? 'incompatible' : prefix && prefix !== '~' ? 'optional' : 'required';
+  return {
+    name,
+    kind,
+    defaultEnabled: prefix === '+',
+    hidden: prefix === '(?)',
+    constraint: rest.trim() || undefined,
+  };
+}
+
+/** Parse a whole `dependencies` array, dropping unparseable entries. */
+export function parseDependencies(deps: unknown): ModDependency[] {
   if (!Array.isArray(deps)) return [];
-  const out: string[] = [];
+  const out: ModDependency[] = [];
   for (const raw of deps) {
-    if (typeof raw !== 'string') continue;
-    const dep = raw.trim();
-    if (/^(\(\?\)|[?!+])/.test(dep)) continue;
-    const name = dep.replace(/^~\s*/, '').split(/[<>=]/)[0].trim();
-    if (name && name !== CORE) out.push(name);
+    const dep = parseDependency(raw);
+    if (dep) out.push(dep);
   }
   return out;
+}
+
+/** Names of the *hard* dependencies in an info.json `dependencies` array. */
+export function hardDependencies(deps: unknown): string[] {
+  return parseDependencies(deps)
+    .filter((d) => d.kind === 'required')
+    .map((d) => d.name);
 }
 
 /** Marker the introspection script prints after each info.json. */

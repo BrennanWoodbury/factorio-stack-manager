@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseModInfo,
+  parseDependency,
+  parseDependencies,
   hardDependencies,
   dependencyClosure,
   modEnablementFor,
@@ -64,6 +66,35 @@ test('optional dependency prefixes are not requirements', () => {
   assert.deepEqual(hardDependencies(['base >= 2.1.0', '+ quality >= 2.1.0']), ['base']);
   assert.deepEqual(hardDependencies(['? foo', '(?) bar', '! baz', '~ qux >= 1.0']), ['qux']);
   assert.deepEqual(hardDependencies(undefined), []);
+});
+
+test('every dependency prefix maps to a kind, and the constraint survives', () => {
+  const parsed = parseDependencies([
+    'base >= 2.1.0',
+    '~ postprocess >= 0.7.5',
+    '+ quality',
+    '? optional-thing >= 1.2.3',
+    '(?) hidden-thing',
+    '! conflicting-thing',
+    'core',
+    42,
+  ]);
+  assert.deepEqual(
+    parsed.map((d) => [d.name, d.kind, d.constraint]),
+    [
+      ['base', 'required', '>= 2.1.0'],
+      ['postprocess', 'required', '>= 0.7.5'],
+      ['quality', 'optional', undefined],
+      ['optional-thing', 'optional', '>= 1.2.3'],
+      ['hidden-thing', 'optional', undefined],
+      ['conflicting-thing', 'incompatible', undefined],
+    ],
+    'core and non-strings are dropped',
+  );
+  assert.equal(parsed.find((d) => d.name === 'quality')?.defaultEnabled, true);
+  assert.equal(parsed.find((d) => d.name === 'hidden-thing')?.hidden, true);
+  assert.equal(parseDependency('  spaced-name  <= 3.0 ')?.constraint, '<= 3.0');
+  assert.equal(parseDependency(''), undefined);
 });
 
 test('2.0: quality comes back through the closure, so no-quality is impossible', () => {
