@@ -579,6 +579,54 @@ Realistic failure modes return structured JSON errors (`{ error: { code, message
 
 ---
 
+## Troubleshooting
+
+### Can't connect by domain name from the same network as the host
+
+Symptom: `factory1.mydomain.com` connects fine for players **outside** your network, but times
+out for anyone on the **same LAN** as the host — including the host itself — while
+`<lan-ip>:<port>` still works for them.
+
+This is **NAT hairpinning** (also called NAT loopback/reflection), not a misconfiguration in
+this app. The SRV lookup resolves to the single shared host record (see "How the networking
+works" above), which is your router's *public* IP. Many consumer routers refuse to route a LAN
+client's own traffic back in through their own WAN-facing NAT, so the packets vanish. There's no
+DNS trick this app can apply automatically — from the outside, that name should keep resolving
+to your public IP for everyone who isn't behind the same router.
+
+Two fixes, in order of preference:
+
+1. **Turn on NAT loopback / NAT reflection in your router**, if it has the option (common on
+   pfSense/OPNsense, UniFi, and many ASUS/Merlin routers). Nothing else changes.
+2. **Add one local DNS override for the shared host record.** Because every server's SRV target
+   is that same record (shown as *Generated host record* on the DNS settings page, e.g.
+   `factorio-tools-manager.mydomain.com`), a single override fixes every server at once — you
+   don't need one per subdomain. Point it at the host's LAN IP in whatever resolves DNS for your
+   network: a Pi-hole/AdGuard Home local entry, a dnsmasq/Unbound override, or your router's own
+   DNS server. Depending on what that resolver supports, this might be a plain A-record override,
+   a CNAME, or a DNAME redirect — any of them work as long as only the shared host record is
+   affected, not the public zone.
+3. **No local DNS server? Edit the hosts file on each device that needs it.** This only fixes
+   *that one machine* (not every device on the LAN like option 2), and doesn't track a changing
+   LAN IP automatically, but it's the fastest fix for a single admin or player machine.
+   [`scripts/add-host-entry.sh`](scripts/add-host-entry.sh) (Linux/macOS, run with `sudo`) and
+   [`scripts/add-host-entry.ps1`](scripts/add-host-entry.ps1) (Windows, run from an elevated
+   PowerShell prompt) add/update the entry idempotently — safe to re-run if the LAN IP changes:
+
+   ```bash
+   sudo ./scripts/add-host-entry.sh factorio-tools-manager.mydomain.com 192.168.1.50
+   ```
+
+   ```powershell
+   .\scripts\add-host-entry.ps1 -HostRecord factorio-tools-manager.mydomain.com -LanIp 192.168.1.50
+   ```
+
+   Both take the *generated host record* (not the per-server subdomain) and the host's LAN IP.
+   Review a script before running it with elevated privileges, as with any script that edits
+   system files.
+
+---
+
 ## Security notes
 
 - The UI can start/stop/delete infrastructure — it's gated by a single admin login. Put it behind
