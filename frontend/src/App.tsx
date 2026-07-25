@@ -9,6 +9,7 @@ import { MapGenTemplatesView } from './components/MapGenTemplatesView';
 import { SettingsView } from './components/SettingsView';
 import { NotificationsCenter } from './components/NotificationsCenter';
 import { BrandMark } from './components/BrandMark';
+import { Footer } from './components/Footer';
 import { Toaster } from './ui';
 
 type Tab = 'servers' | 'modpacks' | 'templates' | 'settings';
@@ -99,6 +100,7 @@ export function App() {
         {tab === 'templates' && <MapGenTemplatesView />}
         {tab === 'settings' && <SettingsView />}
       </div>
+      <Footer />
       <Toaster />
     </>
   );
