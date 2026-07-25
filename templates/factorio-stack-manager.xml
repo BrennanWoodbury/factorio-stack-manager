@@ -1,19 +1,19 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>factorio-tools-manager</Name>
-  <Repository>brennanwoodbury/factorio-manager:latest</Repository>
-  <Registry>https://hub.docker.com/r/brennanwoodbury/factorio-manager</Registry>
+  <Name>factorio-stack-manager</Name>
+  <Repository>brennanwoodbury/factorio-stack-manager:latest</Repository>
+  <Registry>https://hub.docker.com/r/brennanwoodbury/factorio-stack-manager</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>true</Privileged>
 
-  <Icon>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/BrennanWoodbury/factorio-stack-manager/main/icon.png</Icon>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
 
-  <Support>https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml</Support>
-  <Project>https://github.com/BrennanWoodbury/factorio-tools-manager</Project>
-  <TemplateURL>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/templates/factorio-tools-manager.xml</TemplateURL>
-  <ReadMe>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/README.md</ReadMe>
+  <Support>https://github.com/BrennanWoodbury/factorio-stack-manager/issues/new?template=unraid-support.yml</Support>
+  <Project>https://github.com/BrennanWoodbury/factorio-stack-manager</Project>
+  <TemplateURL>https://raw.githubusercontent.com/BrennanWoodbury/factorio-stack-manager/main/templates/factorio-stack-manager.xml</TemplateURL>
+  <ReadMe>https://raw.githubusercontent.com/BrennanWoodbury/factorio-stack-manager/main/README.md</ReadMe>
 
   <Category>GameServers: Tools:Utilities</Category>
   <ExtraSearchTerms>factorio game server multiplayer dedicated srv mods modpack</ExtraSearchTerms>
@@ -65,9 +65,9 @@ manage sibling server containers. Cloudflare DNS is optional and configured
 inside the app.
   </Requires>
 
-  <Changes>Release history: https://github.com/BrennanWoodbury/factorio-tools-manager/releases</Changes>
+  <Changes>Release history: https://github.com/BrennanWoodbury/factorio-stack-manager/releases</Changes>
 
-  <Date>2026-07-24</Date>
+  <Date>2026-07-25</Date>
   <MinVer>6.12</MinVer>
   <License>MIT</License>
 
@@ -77,9 +77,9 @@ inside the app.
           Type="Port" Display="always" Required="true" Mask="false">8080</Config>
 
   <!-- Persistent data: SQLite DB plus every server's saves, mods and config. -->
-  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/factorio-tools-manager" Mode="rw"
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/factorio-stack-manager" Mode="rw"
           Description="Everything persistent lives here: the manager database and each server's saves, mods and config. The manager detects the host path behind this mount automatically, so the Factorio containers it creates bind-mount the right directory."
-          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/factorio-tools-manager</Config>
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/factorio-stack-manager</Config>
 
   <!-- Required to create and control the per-server containers. -->
   <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw"
