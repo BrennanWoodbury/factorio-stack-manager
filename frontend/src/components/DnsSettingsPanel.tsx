@@ -227,6 +227,24 @@ export function DnsSettingsPanel() {
 
       <DnsRecordsPreview baseDomain={baseDomain} />
 
+      <div
+        className="small muted"
+        style={{
+          margin: '4px 0 12px',
+          padding: 10,
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+        }}
+      >
+        <strong>Doesn't connect from your own network?</strong> If the domain works for players
+        outside your network but times out for anyone on the same LAN as this host, that's{' '}
+        <strong>NAT hairpinning</strong> — a router limitation, not a DNS problem this app can fix
+        automatically. See the README's <span className="mono">Troubleshooting</span> section:
+        enable NAT loopback/reflection on your router if it supports it, or add one local DNS
+        override for the generated host record above (it's shared by every server, so a single
+        override fixes them all).
+      </div>
+
       <div className="row">
         <div className="grow">
           <label>Cloudflare Zone ID</label>

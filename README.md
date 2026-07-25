@@ -573,6 +573,36 @@ Realistic failure modes return structured JSON errors (`{ error: { code, message
 
 ---
 
+## Troubleshooting
+
+### Can't connect by domain name from the same network as the host
+
+Symptom: `factory1.mydomain.com` connects fine for players **outside** your network, but times
+out for anyone on the **same LAN** as the host — including the host itself — while
+`<lan-ip>:<port>` still works for them.
+
+This is **NAT hairpinning** (also called NAT loopback/reflection), not a misconfiguration in
+this app. The SRV lookup resolves to the single shared host record (see "How the networking
+works" above), which is your router's *public* IP. Many consumer routers refuse to route a LAN
+client's own traffic back in through their own WAN-facing NAT, so the packets vanish. There's no
+DNS trick this app can apply automatically — from the outside, that name should keep resolving
+to your public IP for everyone who isn't behind the same router.
+
+Two fixes, in order of preference:
+
+1. **Turn on NAT loopback / NAT reflection in your router**, if it has the option (common on
+   pfSense/OPNsense, UniFi, and many ASUS/Merlin routers). Nothing else changes.
+2. **Add one local DNS override for the shared host record.** Because every server's SRV target
+   is that same record (shown as *Generated host record* on the DNS settings page, e.g.
+   `factorio-tools-manager.mydomain.com`), a single override fixes every server at once — you
+   don't need one per subdomain. Point it at the host's LAN IP in whatever resolves DNS for your
+   network: a Pi-hole/AdGuard Home local entry, a dnsmasq/Unbound override, or your router's own
+   DNS server. Depending on what that resolver supports, this might be a plain A-record override,
+   a CNAME, or a DNAME redirect — any of them work as long as only the shared host record is
+   affected, not the public zone.
+
+---
+
 ## Security notes
 
 - The UI can start/stop/delete infrastructure — it's gated by a single admin login. Put it behind
