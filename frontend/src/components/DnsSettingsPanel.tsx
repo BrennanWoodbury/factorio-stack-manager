@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import type { DnsSettings } from '../types';
+import type { DnsReconcileResult, DnsSettings } from '../types';
 import { run, toastError, toastSuccess } from '../ui';
 
 /**
@@ -18,7 +18,9 @@ export function DnsSettingsPanel() {
   const [ipCheckUrl, setIpCheckUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [reconciliation, setReconciliation] = useState<DnsReconcileResult | null>(null);
   const [validatedFingerprint, setValidatedFingerprint] = useState<string | null>(null);
 
   const fingerprint = (hasStoredToken: boolean) =>
@@ -32,7 +34,7 @@ export function DnsSettingsPanel() {
 
   const load = useCallback(async () => {
     try {
-      const { dns } = await api.getDns();
+      const { dns, reconciliation } = await api.getDns();
       setDns(dns);
       setBaseDomain(dns.baseDomain);
       setHostRecordName(dns.hostRecordName);
@@ -41,6 +43,7 @@ export function DnsSettingsPanel() {
       setIpCheckUrl(dns.ipCheckUrl);
       setToken('');
       setTestResult(null);
+      setReconciliation(reconciliation ?? null);
       setValidatedFingerprint(
         dns.enabled
           ? JSON.stringify([
@@ -77,6 +80,7 @@ export function DnsSettingsPanel() {
     const ok = await run(async () => {
       const r = await api.setDns(patch);
       setDns(r.dns);
+      setReconciliation(r.reconciliation ?? null);
       setToken('');
     }, 'DNS settings saved');
     setBusy(false);
@@ -114,6 +118,20 @@ export function DnsSettingsPanel() {
       setTestResult(`✗ ${(err as Error).message}`);
     } finally {
       setTesting(false);
+    }
+  };
+
+  const reconcile = async () => {
+    setSyncing(true);
+    try {
+      const { reconciliation } = await api.reconcileDns();
+      setReconciliation(reconciliation);
+      if (reconciliation.ok) toastSuccess('DNS records synchronized');
+      else toastError('DNS synchronization completed with errors');
+    } catch (err) {
+      toastError((err as Error).message);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -261,6 +279,53 @@ export function DnsSettingsPanel() {
           <span className="small muted">Test the current values before saving.</span>
         )}
       </div>
+
+      {dns.enabled && (
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <div className="spread" style={{ alignItems: 'center' }}>
+            <div>
+              <strong>DNS synchronization</strong>
+              {reconciliation && (
+                <span
+                  className={`badge ${reconciliation.ok ? 'running' : 'stopped'}`}
+                  style={{ marginLeft: 8 }}
+                >
+                  {reconciliation.ok ? 'Healthy' : 'Errors'}
+                </span>
+              )}
+            </div>
+            <button onClick={() => void reconcile()} disabled={syncing}>
+              {syncing ? 'Syncing…' : 'Sync DNS now'}
+            </button>
+          </div>
+          {!reconciliation && (
+            <div className="small muted" style={{ marginTop: 8 }}>
+              No synchronization has run since the manager started.
+            </div>
+          )}
+          {reconciliation && (
+            <div className="small" style={{ marginTop: 8 }}>
+              <div className="muted">
+                Last run {new Date(reconciliation.lastRun).toLocaleString()}
+                {reconciliation.publicIp ? ` · public IP ${reconciliation.publicIp}` : ''}
+              </div>
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {reconciliation.records.map((record) => (
+                  <div
+                    key={`${record.type}:${record.serverId ?? record.name}`}
+                    style={{ color: record.ok ? 'var(--green)' : 'var(--red)' }}
+                  >
+                    {record.ok ? '✓' : '✗'} {record.type}{' '}
+                    <span className="mono">{record.name}</span>
+                    {record.action ? ` · ${record.action}` : ''}
+                    {record.error ? ` · ${record.error}` : ''}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

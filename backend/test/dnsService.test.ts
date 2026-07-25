@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../src/db/index.js';
+import { kvGet, kvSet, openDb } from '../src/db/index.js';
 import { DnsService } from '../src/services/dnsService.js';
 import { getDnsSettings, setDnsSettings } from '../src/services/dnsSettings.js';
 
@@ -10,6 +10,35 @@ function cloudflareResult(result: unknown): Response {
   return new Response(JSON.stringify({ success: true, errors: [], result }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function cloudflareFailure(message: string): Response {
+  return new Response(
+    JSON.stringify({ success: false, errors: [{ code: 1000, message }], result: null }),
+    { status: 403, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+function insertServer(
+  db: ReturnType<typeof openDb>,
+  id: string,
+  subdomain: string,
+  gamePort: number,
+): void {
+  db.prepare(
+    `INSERT INTO servers (id, name, subdomain, game_port, rcon_port, rcon_password, lifecycle)
+     VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+  ).run(id, id, subdomain, gamePort, gamePort + 1000, 'secret');
+}
+
+function configureDns(db: ReturnType<typeof openDb>): void {
+  setDnsSettings(db, {
+    baseDomain: 'games.example.com',
+    hostRecordName: 'host.games.example.com',
+    cloudflareZoneId: 'zone-123',
+    cloudflareToken: 'token-123',
+    ipCheckUrl: 'https://ip.example.test',
   });
 }
 
@@ -94,5 +123,176 @@ test('uses the stored masked token when testing other edits', async () => {
   });
 
   assert.equal(result.ok, true);
+  db.close();
+});
+
+test('reconciliation backfills every active server and the shared A record', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'alpha', 'alpha', 34197);
+  insertServer(db, 'beta', 'beta', 34198);
+  let nextId = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url === 'https://ip.example.test') return new Response('203.0.113.42');
+    if (url.includes('/dns_records?')) return cloudflareResult([]);
+    if (url.endsWith('/dns_records') && method === 'POST') {
+      return cloudflareResult({ id: `created-${++nextId}` });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const result = await new DnsService(db).reconcile();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.records.length, 3);
+  assert.deepEqual(
+    result.records.map((record) => [record.type, record.name, record.action]),
+    [
+      ['A', 'host.games.example.com', 'created'],
+      ['SRV', '_factorio._udp.alpha.games.example.com', 'created'],
+      ['SRV', '_factorio._udp.beta.games.example.com', 'created'],
+    ],
+  );
+  assert.equal(
+    db.prepare<{ count: number }>("SELECT count(*) AS count FROM dns_records WHERE type = 'SRV'").get()
+      ?.count,
+    2,
+  );
+  assert.equal(kvGet(db, 'host_a_record_id'), 'created-1');
+  db.close();
+});
+
+test('reconciliation rediscovers records by name and removes stale tracked IDs', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'alpha', 'alpha', 34197);
+  kvSet(db, 'host_a_record_id', 'stale-a');
+  db.prepare(
+    `INSERT INTO dns_records (server_id, type, name, cloudflare_record_id, content)
+     VALUES ('alpha', 'SRV', 'old-name', 'stale-srv', 'old-target')`,
+  ).run();
+  const deleted: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url === 'https://ip.example.test') return new Response('203.0.113.42');
+    if (url.includes('type=A')) {
+      return cloudflareResult([{ id: 'discovered-a', name: 'host.games.example.com' }]);
+    }
+    if (url.includes('type=SRV')) {
+      return cloudflareResult([
+        { id: 'discovered-srv', name: '_factorio._udp.alpha.games.example.com' },
+      ]);
+    }
+    if (method === 'PUT') return cloudflareResult({ id: url.split('/').at(-1) });
+    if (method === 'DELETE') {
+      deleted.push(url.split('/').at(-1) ?? '');
+      return cloudflareResult({ id: url.split('/').at(-1) });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const result = await new DnsService(db).reconcile();
+
+  assert.equal(result.ok, true);
+  assert.equal(kvGet(db, 'host_a_record_id'), 'discovered-a');
+  assert.equal(
+    db.prepare<{ id: string }>(
+      "SELECT cloudflare_record_id AS id FROM dns_records WHERE server_id = 'alpha'",
+    ).get()?.id,
+    'discovered-srv',
+  );
+  assert.deepEqual(deleted.sort(), ['stale-a', 'stale-srv']);
+  db.close();
+});
+
+test('failed activation preserves stored settings and removes newly-created records', async () => {
+  const db = openDb(':memory:');
+  insertServer(db, 'alpha', 'alpha', 34197);
+  const deleted: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url.endsWith('/zones/zone-123')) {
+      return cloudflareResult({ id: 'zone-123', name: 'example.com', status: 'active' });
+    }
+    if (url === 'https://ip.example.test') return new Response('203.0.113.42');
+    if (url.includes('/dns_records?')) return cloudflareResult([]);
+    if (url.endsWith('/dns_records') && method === 'POST') {
+      const body = JSON.parse(String(init?.body)) as { type: string };
+      return body.type === 'A' ? cloudflareResult({ id: 'new-a' }) : cloudflareFailure('write denied');
+    }
+    if (method === 'DELETE') {
+      deleted.push(url.split('/').at(-1) ?? '');
+      return cloudflareResult({ id: url.split('/').at(-1) });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  await assert.rejects(
+    () =>
+      new DnsService(db).activateSettings({
+        baseDomain: 'games.example.com',
+        hostRecordName: 'host.games.example.com',
+        cloudflareZoneId: 'zone-123',
+        cloudflareToken: 'token-123',
+        ipCheckUrl: 'https://ip.example.test',
+      }),
+    /DNS activation failed/,
+  );
+
+  assert.equal(getDnsSettings(db).cloudflareZoneId, '');
+  assert.deepEqual(deleted, ['new-a']);
+  db.close();
+});
+
+test('successful topology change swaps bookkeeping and removes old-zone records', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'alpha', 'alpha', 34197);
+  kvSet(db, 'host_a_record_id', 'old-a');
+  db.prepare(
+    `INSERT INTO dns_records (server_id, type, name, cloudflare_record_id, content)
+     VALUES ('alpha', 'SRV', 'old-name', 'old-srv', 'old-target')`,
+  ).run();
+  const deleted: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url.endsWith('/zones/new-zone')) {
+      return cloudflareResult({ id: 'new-zone', name: 'new.example', status: 'active' });
+    }
+    if (url === 'https://ip.example.test') return new Response('203.0.113.42');
+    if (url.includes('/dns_records?')) return cloudflareResult([]);
+    if (url.endsWith('/dns_records') && method === 'POST') {
+      const body = JSON.parse(String(init?.body)) as { type: string };
+      return cloudflareResult({ id: body.type === 'A' ? 'new-a' : 'new-srv' });
+    }
+    if (method === 'DELETE') {
+      deleted.push(url.split('/').at(-1) ?? '');
+      return cloudflareResult({ id: url.split('/').at(-1) });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const activated = await new DnsService(db).activateSettings({
+    baseDomain: 'games.new.example',
+    hostRecordName: 'host.games.new.example',
+    cloudflareZoneId: 'new-zone',
+    cloudflareToken: 'new-token',
+  });
+
+  assert.equal(activated.reconciliation?.ok, true);
+  assert.equal(getDnsSettings(db).cloudflareZoneId, 'new-zone');
+  assert.equal(kvGet(db, 'host_a_record_id'), 'new-a');
+  assert.equal(
+    db.prepare<{ id: string }>(
+      "SELECT cloudflare_record_id AS id FROM dns_records WHERE server_id = 'alpha'",
+    ).get()?.id,
+    'new-srv',
+  );
+  assert.deepEqual(deleted.sort(), ['old-a', 'old-srv']);
   db.close();
 });

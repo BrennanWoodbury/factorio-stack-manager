@@ -7,6 +7,7 @@ const apiMocks = vi.hoisted(() => ({
   getDns: vi.fn(),
   setDns: vi.fn(),
   testDns: vi.fn(),
+  reconcileDns: vi.fn(),
 }));
 
 vi.mock('../api', () => ({ api: apiMocks }));
@@ -36,6 +37,21 @@ beforeEach(() => {
       cloudflareZoneId: 'zone-123',
       hasToken: true,
       enabled: true,
+    },
+  });
+  apiMocks.reconcileDns.mockResolvedValue({
+    reconciliation: {
+      ok: true,
+      lastRun: '2026-07-25T00:00:00.000Z',
+      publicIp: '203.0.113.42',
+      records: [
+        {
+          type: 'A',
+          name: 'host.games.example.com',
+          ok: true,
+          action: 'updated',
+        },
+      ],
     },
   });
 });
@@ -89,5 +105,26 @@ describe('DnsSettingsPanel', () => {
     expect(link.getAttribute('href')).toBe(
       'https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/',
     );
+  });
+
+  test('runs manual reconciliation and shows per-record health', async () => {
+    apiMocks.getDns.mockResolvedValue({
+      dns: {
+        ...disabledDns,
+        baseDomain: 'games.example.com',
+        hostRecordName: 'host.games.example.com',
+        cloudflareZoneId: 'zone-123',
+        hasToken: true,
+        enabled: true,
+      },
+    });
+    render(<DnsSettingsPanel />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync DNS now' }));
+
+    await waitFor(() => expect(apiMocks.reconcileDns).toHaveBeenCalledOnce());
+    expect(await screen.findByText('Healthy')).toBeTruthy();
+    expect(screen.getAllByText(/host\.games\.example\.com/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/updated/)).toBeTruthy();
   });
 });
