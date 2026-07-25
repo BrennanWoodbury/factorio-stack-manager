@@ -138,8 +138,9 @@ For Unraid-specific installation or runtime help, use the
 It applies the `unraid` label automatically so reports remain searchable in this repository.
 
 > **Data location.** Persistent data (SQLite DB + per-server saves/mods/config) is stored at
-> `/opt/factorio-tools-manager`. Override with `FTM_DATA_DIR` (e.g.
-> `FTM_DATA_DIR=$HOME/.factorio-tools-manager`).
+> `/opt/factorio-tools-manager`. Override with `FSM_DATA_DIR` (e.g.
+> `FSM_DATA_DIR=$HOME/.factorio-stack-manager`). `FTM_DATA_DIR`, its pre-rebrand name, is still
+> honored if `FSM_DATA_DIR` is unset — an existing install's `.env` needs no changes.
 >
 > The compose file bind-mounts it at the *same* path inside and outside the container. That's
 > tidy but no longer required: the manager reads its own mount table at startup to learn the
@@ -157,8 +158,9 @@ It applies the `unraid` label automatically so reports remain searchable in this
 | `ADMIN_PASSWORD`        | ✅       | —                              | Web UI login password |
 | `WEB_PORT`              |          | `8080` (prod) / `5173` (dev)   | Host port for the web UI; `API_PORT` (dev only) for the backend |
 | `JWT_SECRET`            |          | derived                        | Signs session cookies; set your own (`openssl rand -hex 32`) |
-| `FTM_DATA_DIR`          |          | `/opt/factorio-tools-manager`  | Data location; identity-mounted host↔container (prod compose) |
-| `DATA_DIR`              |          | `FTM_DATA_DIR`                 | In-container data path (host-mode dev defaults to `../data`) |
+| `FSM_DATA_DIR`          |          | `/opt/factorio-tools-manager`  | Data location; identity-mounted host↔container (prod compose) |
+| `FTM_DATA_DIR`          |          | `FSM_DATA_DIR`                 | Pre-rebrand name for the same variable; still honored if `FSM_DATA_DIR` is unset |
+| `DATA_DIR`              |          | `FSM_DATA_DIR`                 | In-container data path (host-mode dev defaults to `../data`) |
 | `HOST_SERVERS_DIR`      |          | autodetected                   | Host bind-mount source; detected from the manager's own mounts, only set it to override |
 | `GAME_PORT_RANGE`       |          | `34197-34297`                  | Pre-forwarded UDP game-port pool |
 | `RCON_PORT_RANGE`       |          | `27015-27115`                  | Loopback-only RCON port pool |

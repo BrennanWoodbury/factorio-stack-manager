@@ -407,7 +407,7 @@ export function DnsSettingsPanel() {
  */
 const derivedHostRecord = (baseDomain: string) => {
   const base = baseDomain.trim().toLowerCase().replace(/\.$/, '');
-  return base ? `factorio-tools-manager.${base}` : '';
+  return base ? `factorio-stack-manager.${base}` : '';
 };
 
 function DnsRecordsPreview({ baseDomain }: { baseDomain: string }) {

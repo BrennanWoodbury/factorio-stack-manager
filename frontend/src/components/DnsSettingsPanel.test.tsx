@@ -43,7 +43,7 @@ beforeEach(() => {
       ...unconfiguredDns,
       revision: 1,
       baseDomain: 'games.example.com',
-      hostRecordName: 'factorio-tools-manager.games.example.com',
+      hostRecordName: 'factorio-stack-manager.games.example.com',
       cloudflareZoneId: 'zone-123',
       cloudflareZoneName: 'example.com',
       hasToken: true,
@@ -60,7 +60,7 @@ beforeEach(() => {
       records: [
         {
           type: 'A',
-          name: 'factorio-tools-manager.games.example.com',
+          name: 'factorio-stack-manager.games.example.com',
           ok: true,
           action: 'updated',
         },
@@ -105,7 +105,7 @@ describe('DnsSettingsPanel', () => {
     );
     expect(await screen.findByText('✓ Public IP 203.0.113.42')).toBeTruthy();
     expect((screen.getByRole('textbox', { name: 'Generated host record' }) as HTMLInputElement).value)
-      .toBe('factorio-tools-manager.games.example.com');
+      .toBe('factorio-stack-manager.games.example.com');
     expect(
       (screen.getByRole('textbox', { name: 'Generated host record' }) as HTMLInputElement).readOnly,
     ).toBe(true);
@@ -142,7 +142,7 @@ describe('DnsSettingsPanel', () => {
       ...unconfiguredDns,
       revision: 4,
       baseDomain: 'games.example.com',
-      hostRecordName: 'factorio-tools-manager.games.example.com',
+      hostRecordName: 'factorio-stack-manager.games.example.com',
       cloudflareZoneId: 'zone-123',
       cloudflareZoneName: 'example.com',
       hasToken: true,
@@ -171,7 +171,7 @@ describe('DnsSettingsPanel', () => {
       dns: {
         ...unconfiguredDns,
         baseDomain: 'games.example.com',
-        hostRecordName: 'factorio-tools-manager.games.example.com',
+        hostRecordName: 'factorio-stack-manager.games.example.com',
         cloudflareZoneId: 'zone-123',
         cloudflareZoneName: 'example.com',
         hasToken: true,
@@ -186,7 +186,7 @@ describe('DnsSettingsPanel', () => {
 
     await waitFor(() => expect(apiMocks.reconcileDns).toHaveBeenCalledOnce());
     expect(await screen.findByText('Healthy')).toBeTruthy();
-    expect(screen.getAllByText(/factorio-tools-manager\.games\.example\.com/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/factorio-stack-manager\.games\.example\.com/).length).toBeGreaterThan(0);
     expect(screen.getByText(/updated/)).toBeTruthy();
   });
 });

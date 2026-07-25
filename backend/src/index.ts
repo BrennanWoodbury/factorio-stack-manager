@@ -96,6 +96,14 @@ async function main() {
   }
   console.log(`[startup] Factorio containers bind-mount from ${getHostServersDir()}`);
 
+  // One-time: repoint everything at the new DNS host label the rebrand introduced,
+  // before the ordinary reconcile/DDNS loop starts touching the same records.
+  try {
+    await ctx.dns.migrateHostLabelRename();
+  } catch (err) {
+    console.warn(`[startup] DNS host-label migration failed: ${(err as Error).message}`);
+  }
+
   if (ctx.dns.enabled) {
     void ctx.dns
       .reconcile()
