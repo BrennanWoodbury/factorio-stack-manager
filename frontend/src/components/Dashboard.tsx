@@ -200,8 +200,13 @@ function SystemPanel({ system }: { system: SystemStatus }) {
           <div className="l">Game ports used</div>
         </div>
         <div className="stat">
-          <div className="n">{system.ports.rcon.free}</div>
-          <div className="l">RCON ports free</div>
+          <div className="n">
+            {system.ports.rcon.used}
+            <span className="muted" style={{ fontSize: 14 }}>
+              /{system.ports.rcon.total}
+            </span>
+          </div>
+          <div className="l">RCON ports used</div>
         </div>
         <div className="stat">
           <div className="n" style={{ color: system.dns.enabled ? 'var(--green)' : 'var(--muted)' }}>
