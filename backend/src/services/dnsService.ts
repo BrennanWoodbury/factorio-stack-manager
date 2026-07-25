@@ -2,7 +2,12 @@ import type { DB } from '../db/index.js';
 import { kvGet, kvSet } from '../db/index.js';
 import type { DnsRecordRow, ServerRow } from '../db/models.js';
 import { CloudflareClient, type SrvData } from '../lib/cloudflare.js';
-import { dnsEnabled, getDnsSettings, type DnsSettings } from './dnsSettings.js';
+import {
+  dnsEnabled,
+  getDnsSettings,
+  type DnsSettings,
+  type DnsSettingsPatch,
+} from './dnsSettings.js';
 
 const KV_HOST_A_RECORD_ID = 'host_a_record_id';
 const KV_LAST_PUBLIC_IP = 'last_public_ip';
@@ -165,15 +170,78 @@ export class DnsService {
     return true;
   }
 
-  /** Verify the configured token can access the configured zone (for the UI test). */
-  async testConnection(): Promise<{ ok: boolean; zoneName?: string; error?: string }> {
-    const s = this.settings();
-    if (!s.cloudflareToken || !s.cloudflareZoneId) {
-      return { ok: false, error: 'API token and Zone ID are required' };
+  /**
+   * Validate an unsaved candidate configuration without persisting it or changing
+   * DNS. Omitted values fall back to the stored settings, which lets an admin test
+   * edits without re-entering the masked token.
+   */
+  async testConnection(
+    candidate: DnsSettingsPatch = {},
+  ): Promise<{ ok: boolean; zoneName?: string; publicIp?: string; error?: string }> {
+    const current = this.settings();
+    const s: DnsSettings = {
+      baseDomain:
+        candidate.baseDomain === undefined
+          ? current.baseDomain
+          : candidate.baseDomain.trim().toLowerCase().replace(/\.$/, ''),
+      hostRecordName:
+        candidate.hostRecordName === undefined
+          ? current.hostRecordName
+          : candidate.hostRecordName.trim().toLowerCase().replace(/\.$/, ''),
+      cloudflareZoneId:
+        candidate.cloudflareZoneId === undefined
+          ? current.cloudflareZoneId
+          : candidate.cloudflareZoneId.trim(),
+      cloudflareToken:
+        candidate.cloudflareToken === undefined
+          ? current.cloudflareToken
+          : candidate.cloudflareToken.trim(),
+      ddnsIntervalSeconds: candidate.ddnsIntervalSeconds ?? current.ddnsIntervalSeconds,
+      ipCheckUrl:
+        candidate.ipCheckUrl === undefined ? current.ipCheckUrl : candidate.ipCheckUrl.trim(),
+    };
+
+    if (!s.cloudflareToken || !s.cloudflareZoneId || !s.baseDomain || !s.hostRecordName) {
+      return {
+        ok: false,
+        error: 'Server domain, host record, API token and Zone ID are required',
+      };
     }
     try {
-      const zone = await new CloudflareClient(s.cloudflareToken, s.cloudflareZoneId).getZone();
-      return { ok: true, zoneName: zone.name };
+      const cf = new CloudflareClient(s.cloudflareToken, s.cloudflareZoneId);
+      const zone = await cf.getZone();
+      const zoneName = zone.name.trim().toLowerCase().replace(/\.$/, '');
+      const belongsToZone = (name: string) => name === zoneName || name.endsWith(`.${zoneName}`);
+      if (!belongsToZone(s.baseDomain)) {
+        return {
+          ok: false,
+          zoneName,
+          error: `Server domain must belong to Cloudflare zone ${zoneName}`,
+        };
+      }
+      if (!belongsToZone(s.hostRecordName)) {
+        return {
+          ok: false,
+          zoneName,
+          error: `Host record must belong to Cloudflare zone ${zoneName}`,
+        };
+      }
+
+      // A read proves that the token is scoped to DNS in this zone without making
+      // the test itself mutate customer records.
+      await cf.findRecords('A', s.hostRecordName);
+
+      const response = await fetch(s.ipCheckUrl, { signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) throw new Error(`IP check returned HTTP ${response.status}`);
+      const publicIp = (await response.text()).trim();
+      const octets = publicIp.split('.');
+      if (
+        octets.length !== 4 ||
+        octets.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)
+      ) {
+        throw new Error(`Unexpected IP check response: ${publicIp.slice(0, 64)}`);
+      }
+      return { ok: true, zoneName, publicIp };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
