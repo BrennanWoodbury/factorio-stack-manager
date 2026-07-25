@@ -1,4 +1,7 @@
 import type { ServerManager } from '../services/serverManager.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('draft');
 
 /**
  * Draft-pruning job. Sweeps new-server wizard drafts whose 24h TTL has passed
@@ -17,12 +20,12 @@ export class DraftPruneJob {
       try {
         this.manager.pruneDrafts();
       } catch (err) {
-        console.warn(`[draft] prune tick failed: ${(err as Error).message}`);
+        log.warn(`prune tick failed: ${(err as Error).message}`);
       }
     };
     tick(); // sweep once at startup (clears drafts abandoned before a restart)
     this.timer = setInterval(tick, this.tickMs);
-    console.log('[draft] prune scheduler started');
+    log.info('prune scheduler started');
   }
 
   stop(): void {
