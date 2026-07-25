@@ -27,7 +27,9 @@ const K = {
   enabled: 'dns_enabled',
   baseDomain: 'dns_base_domain',
   // Retained as a migration marker for installations that previously chose
-  // this value manually. Runtime settings always use deriveHostRecordName().
+  // this value manually, and also written by the one-time host-label rename
+  // migration (see DnsService.migrateHostLabelRename). Runtime settings
+  // always use deriveHostRecordName().
   hostRecordName: 'dns_host_record',
   zoneId: 'dns_zone_id',
   zoneName: 'dns_zone_name',
@@ -39,15 +41,31 @@ const K = {
 
 export const DEFAULT_DDNS_INTERVAL = 300;
 export const DEFAULT_IP_CHECK_URL = 'https://api.ipify.org';
-export const DNS_HOST_LABEL = 'factorio-tools-manager';
+export const DNS_HOST_LABEL = 'factorio-stack-manager';
+/** The label every install used before the "Factorio Stack Manager" rebrand. */
+export const LEGACY_DNS_HOST_LABEL = 'factorio-tools-manager';
+
+function hostRecordNameFor(label: string, baseDomain: string): string {
+  const base = baseDomain.trim().toLowerCase().replace(/\.$/, '');
+  return base ? `${label}.${base}` : '';
+}
 
 export function deriveHostRecordName(baseDomain: string): string {
-  const base = baseDomain.trim().toLowerCase().replace(/\.$/, '');
-  return base ? `${DNS_HOST_LABEL}.${base}` : '';
+  return hostRecordNameFor(DNS_HOST_LABEL, baseDomain);
+}
+
+/** The pre-rebrand host record name, used only by the one-time rename migration. */
+export function deriveLegacyHostRecordName(baseDomain: string): string {
+  return hostRecordNameFor(LEGACY_DNS_HOST_LABEL, baseDomain);
 }
 
 export function storedHostRecordName(db: DB): string {
   return kvGet(db, K.hostRecordName) ?? '';
+}
+
+/** Written by the one-time host-label migration once it repoints everything. */
+export function setStoredHostRecordName(db: DB, name: string): void {
+  kvSet(db, K.hostRecordName, name);
 }
 
 export function getDnsSettings(db: DB): DnsSettings {

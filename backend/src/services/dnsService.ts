@@ -7,8 +7,10 @@ import {
   dnsEnabled,
   serverDnsEnabled,
   deriveHostRecordName,
+  deriveLegacyHostRecordName,
   getDnsSettings,
   setDnsSettings,
+  setStoredHostRecordName,
   storedHostRecordName,
   type DnsSettings,
   type DnsSettingsPatch,
@@ -16,6 +18,7 @@ import {
 
 const KV_HOST_A_RECORD_ID = 'host_a_record_id';
 const KV_LAST_PUBLIC_IP = 'last_public_ip';
+const KV_DNS_HOST_LABEL_MIGRATED = 'dns_host_label_migrated';
 
 export interface DnsReconcileRecordResult {
   type: 'A' | 'SRV';
@@ -253,6 +256,108 @@ export class DnsService {
     }
     kvSet(this.db, KV_LAST_PUBLIC_IP, ip);
     return true;
+  }
+
+  /**
+   * One-time migration for the "Factorio Stack Manager" rebrand: DNS_HOST_LABEL
+   * changed, which changes the real Cloudflare hostname every SRV record targets.
+   * Idempotent and safe to call on every boot — the kv guard makes it a no-op once
+   * done, and it's a no-op for any install where DNS was never configured.
+   *
+   * Deliberately a self-contained routine rather than relying on reconcile()'s
+   * existing topology-diff logic: that path only cleans up the old A record for
+   * installs that already have KV_HOST_A_RECORD_ID cached, and has no CNAME step.
+   * Order matters and mirrors the requirement this migration exists to satisfy:
+   * the new A record must be confirmed before any SRV is repointed at it (so a
+   * player's client never resolves a target with nothing behind it yet), and the
+   * old record is only touched last, best-effort, and never recreated afterward.
+   */
+  async migrateHostLabelRename(): Promise<void> {
+    if (kvGet(this.db, KV_DNS_HOST_LABEL_MIGRATED) === '1') return;
+
+    const s = this.settings();
+    const cf = this.cf(s);
+    if (!cf) {
+      // DNS off/unconfigured: nothing to migrate. Left unmarked so that turning
+      // DNS on later still runs the migration once, against real settings.
+      return;
+    }
+
+    const oldName = deriveLegacyHostRecordName(s.baseDomain);
+    const newName = s.hostRecordName;
+    if (!oldName || !newName || oldName === newName) {
+      kvSet(this.db, KV_DNS_HOST_LABEL_MIGRATED, '1');
+      return;
+    }
+
+    let newARecordId: string;
+    let ip: string;
+    try {
+      ip = kvGet(this.db, KV_LAST_PUBLIC_IP) ?? (await this.detectPublicIp(s.ipCheckUrl));
+      const found = await cf.findRecords('A', newName);
+      if (found.length > 0) {
+        newARecordId = found[0].id;
+        await cf.updateA(newARecordId, newName, ip);
+      } else {
+        const created = await cf.createA(newName, ip);
+        newARecordId = created.id;
+      }
+    } catch (err) {
+      console.warn(
+        `[dns] host-label migration deferred, will retry next start: ${(err as Error).message}`,
+      );
+      return; // marker stays unset
+    }
+
+    const servers = this.db
+      .prepare<ServerRow>("SELECT * FROM servers WHERE lifecycle = 'active' ORDER BY created_at ASC")
+      .all();
+    let allServersOk = true;
+    for (const server of servers) {
+      const row = this.srvRowFor(server.id);
+      if (!row?.cloudflare_record_id) continue; // untracked — an ordinary sync creates it correctly
+      try {
+        const name = this.fullSrvName(s, server.subdomain);
+        await cf.updateSrv(row.cloudflare_record_id, name, this.srvData(s, server.subdomain, server.game_port));
+        this.db
+          .prepare('UPDATE dns_records SET content = ? WHERE id = ?')
+          .run(`${newName}:${server.game_port}`, row.id);
+      } catch (err) {
+        allServersOk = false;
+        console.warn(
+          `[dns] host-label migration: failed to repoint SRV for server ${server.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (!allServersOk) {
+      // Not every SRV is repointed yet. Leave the marker unset so the next start
+      // retries — the A-record steps above are safely idempotent to redo, and
+      // servers that already succeeded just get a harmless redundant update.
+      console.warn('[dns] host-label migration deferred, will retry next start: some SRV records were not repointed');
+      return;
+    }
+
+    kvSet(this.db, KV_HOST_A_RECORD_ID, newARecordId);
+    kvSet(this.db, KV_LAST_PUBLIC_IP, ip);
+    setStoredHostRecordName(this.db, newName);
+    kvSet(this.db, KV_DNS_HOST_LABEL_MIGRATED, '1');
+
+    // Best-effort courtesy, never gates completion above: leave a redirect behind
+    // at the old name (or nothing, if it's already gone) so nothing that cached
+    // the old hostname goes straight to NXDOMAIN. Never recreates the old name.
+    try {
+      const oldRecords = await cf.findRecordsByName(oldName);
+      const oldA = oldRecords.find((r) => r.type.toUpperCase() === 'A');
+      if (oldA) {
+        await cf.deleteRecord(oldA.id);
+        await cf.createCname(oldName, newName);
+      }
+    } catch (err) {
+      console.warn(
+        `[dns] host-label migration: could not redirect old host record ${oldName}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**

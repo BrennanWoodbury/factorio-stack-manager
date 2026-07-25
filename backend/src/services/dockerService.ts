@@ -22,8 +22,17 @@ import { DockerError } from '../lib/errors.js';
  */
 export const RCON_PORT_INTERNAL = 27015;
 
-export const MANAGED_LABEL = 'factorio-manager.managed';
-export const SERVER_ID_LABEL = 'factorio-manager.server-id';
+export const MANAGED_LABEL = 'factorio-stack-manager.managed';
+export const SERVER_ID_LABEL = 'factorio-stack-manager.server-id';
+/**
+ * Labels every container created before the "Factorio Stack Manager" rebrand
+ * carries. Docker labels are immutable once a container exists, so an already-
+ * running Factorio server can never be relabelled without recreating it — which
+ * would kill a live game. Every place that discovers "is this ours" must
+ * therefore recognize either label; only newly-created containers get the new one.
+ */
+export const LEGACY_MANAGED_LABEL = 'factorio-manager.managed';
+export const LEGACY_SERVER_ID_LABEL = 'factorio-manager.server-id';
 
 export interface ContainerStatus {
   exists: boolean;
@@ -154,7 +163,7 @@ export class DockerService {
    */
   async stopAllManaged(timeoutSecs = 30): Promise<number> {
     const list = await this.docker.listContainers({
-      filters: { label: [`${MANAGED_LABEL}=true`] },
+      filters: { label: [`${MANAGED_LABEL}=true`, `${LEGACY_MANAGED_LABEL}=true`] },
     });
     await Promise.all(
       list.map(async (c) => {
@@ -174,9 +183,11 @@ export class DockerService {
   /** IDs of servers with a currently-running (managed) container. */
   async runningServerIds(): Promise<string[]> {
     const list = await this.docker.listContainers({
-      filters: { label: [`${MANAGED_LABEL}=true`] },
+      filters: { label: [`${MANAGED_LABEL}=true`, `${LEGACY_MANAGED_LABEL}=true`] },
     });
-    return list.map((c) => c.Labels?.[SERVER_ID_LABEL]).filter((id): id is string => !!id);
+    return list
+      .map((c) => c.Labels?.[SERVER_ID_LABEL] ?? c.Labels?.[LEGACY_SERVER_ID_LABEL])
+      .filter((id): id is string => !!id);
   }
 
   /**
@@ -200,7 +211,12 @@ export class DockerService {
     const ports = new Set<number>();
     try {
       for (const c of await this.docker.listContainers()) {
-        if (excludeServerId && c.Labels?.[SERVER_ID_LABEL] === excludeServerId) continue;
+        if (
+          excludeServerId &&
+          (c.Labels?.[SERVER_ID_LABEL] === excludeServerId ||
+            c.Labels?.[LEGACY_SERVER_ID_LABEL] === excludeServerId)
+        )
+          continue;
         for (const p of c.Ports ?? []) {
           if (typeof p.PublicPort === 'number') ports.add(p.PublicPort);
         }

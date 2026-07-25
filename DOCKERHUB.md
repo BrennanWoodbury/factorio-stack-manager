@@ -1,5 +1,12 @@
 # Factorio Stack Manager
 
+> **This project is moving.** Future updates publish to
+> [`brennanwoodbury/factorio-stack-manager`](https://hub.docker.com/r/brennanwoodbury/factorio-stack-manager)
+> under the new name **Factorio Stack Manager**, at
+> [github.com/BrennanWoodbury/factorio-stack-manager](https://github.com/BrennanWoodbury/factorio-stack-manager).
+> This repository will stop receiving new images once the move is complete — update
+> your `image:` reference when you see the new one appear.
+
 Run and manage **multiple Factorio dedicated servers** on one Docker host from a
 single web interface. Each game server runs as its own sibling container, so it
 can keep running while the manager is restarted or upgraded.

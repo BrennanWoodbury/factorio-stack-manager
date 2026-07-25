@@ -83,7 +83,7 @@ test('derives the shared host record from the server domain and ignores the lega
 
   assert.equal(
     getDnsSettings(db).hostRecordName,
-    'factorio-tools-manager.factorio.example.com',
+    'factorio-stack-manager.factorio.example.com',
   );
   db.close();
 });
@@ -101,7 +101,7 @@ test('reports a generated-host CNAME collision during the read-only test', async
         {
           id: 'existing-cname',
           type: 'CNAME',
-          name: 'factorio-tools-manager.games.example.com',
+          name: 'factorio-stack-manager.games.example.com',
           content: 'elsewhere.example.net',
         },
       ]);
@@ -194,7 +194,7 @@ test('reconciliation backfills every active server and the shared A record', asy
   assert.deepEqual(
     result.records.map((record) => [record.type, record.name, record.action]),
     [
-      ['A', 'factorio-tools-manager.games.example.com', 'created'],
+      ['A', 'factorio-stack-manager.games.example.com', 'created'],
       ['SRV', '_factorio._udp.alpha.games.example.com', 'created'],
       ['SRV', '_factorio._udp.beta.games.example.com', 'created'],
     ],
@@ -224,7 +224,7 @@ test('reconciliation rediscovers records by name and removes stale tracked IDs',
     if (url === 'https://ip.example.test') return new Response('203.0.113.42');
     if (url.includes('type=A')) {
       return cloudflareResult([
-        { id: 'discovered-a', name: 'factorio-tools-manager.games.example.com' },
+        { id: 'discovered-a', name: 'factorio-stack-manager.games.example.com' },
       ]);
     }
     if (url.includes('type=SRV')) {
@@ -273,7 +273,7 @@ test('a partial reconciliation keeps old topology bookkeeping and records', asyn
     if (url === 'https://ip.example.test') return new Response('203.0.113.42');
     if (url.includes('type=A')) {
       return cloudflareResult([
-        { id: 'new-a', name: 'factorio-tools-manager.games.example.com' },
+        { id: 'new-a', name: 'factorio-stack-manager.games.example.com' },
       ]);
     }
     if (url.includes('_factorio._udp.alpha')) {
@@ -428,7 +428,7 @@ test('concurrent admin saves cannot restore a stale DNS token', async () => {
         {
           id: 'existing-a',
           type: 'A',
-          name: 'factorio-tools-manager.games.example.com',
+          name: 'factorio-stack-manager.games.example.com',
           content: '203.0.113.42',
         },
       ]);
@@ -615,4 +615,225 @@ test('reconciliation sends the record name on every SRV write too', async () => 
   const srvWrites = writes.filter((w) => w.body?.type === 'SRV');
   assert.equal(srvWrites.length, 1);
   assert.equal(srvWrites[0].body.name, '_factorio._udp.factory.games.example.com');
+});
+
+/** Inserts a tracked SRV row as it would exist under the pre-rebrand host label. */
+function insertLegacySrvRow(
+  db: ReturnType<typeof openDb>,
+  serverId: string,
+  subdomain: string,
+  port: number,
+  recordId: string,
+): void {
+  db.prepare(
+    `INSERT INTO dns_records (server_id, type, name, cloudflare_record_id, content)
+     VALUES (?, 'SRV', ?, ?, ?)`,
+  ).run(
+    serverId,
+    `_factorio._udp.${subdomain}.games.example.com`,
+    recordId,
+    `factorio-tools-manager.games.example.com:${port}`,
+  );
+}
+
+test('host-label migration is a no-op when DNS is not configured', async () => {
+  const db = openDb(':memory:');
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new Error('should not have called Cloudflare');
+  };
+
+  await new DnsService(db).migrateHostLabelRename();
+
+  assert.equal(calls, 0);
+  assert.equal(kvGet(db, 'dns_host_label_migrated'), undefined);
+  db.close();
+});
+
+test('host-label migration no-ops once already marked done', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  kvSet(db, 'dns_host_label_migrated', '1');
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new Error('should not have called Cloudflare');
+  };
+
+  await new DnsService(db).migrateHostLabelRename();
+
+  assert.equal(calls, 0);
+  db.close();
+});
+
+test('host-label migration creates the new A record, repoints every SRV, and redirects the old one', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'alpha', 'alpha', 34197);
+  insertServer(db, 'beta', 'beta', 34198);
+  insertLegacySrvRow(db, 'alpha', 'alpha', 34197, 'srv-alpha');
+  insertLegacySrvRow(db, 'beta', 'beta', 34198, 'srv-beta');
+  kvSet(db, 'last_public_ip', '203.0.113.42');
+
+  const deleted: string[] = [];
+  const writes: { method: string; url: string; body: any }[] = [];
+  let calls = 0;
+  globalThis.fetch = async (input, init) => {
+    calls++;
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      writes.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    }
+    if (method === 'GET' && url.includes('type=A')) return cloudflareResult([]); // new A: not found yet
+    if (method === 'GET' && !url.includes('type=')) {
+      // findRecordsByName(oldName) — the pre-rebrand A record is still there.
+      return cloudflareResult([
+        { id: 'old-a', type: 'A', name: 'factorio-tools-manager.games.example.com', content: '198.51.100.1' },
+      ]);
+    }
+    if (method === 'POST' && url.endsWith('/dns_records')) {
+      const body = JSON.parse(String(init?.body)) as { type: string };
+      if (body.type === 'A') return cloudflareResult({ id: 'new-a' });
+      if (body.type === 'CNAME') return cloudflareResult({ id: 'cname-1' });
+    }
+    if (method === 'PUT') return cloudflareResult({ id: url.split('/').at(-1) });
+    if (method === 'DELETE') {
+      deleted.push(url.split('/').at(-1) ?? '');
+      return cloudflareResult({ id: url.split('/').at(-1) });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const dns = new DnsService(db);
+  await dns.migrateHostLabelRename();
+
+  assert.equal(kvGet(db, 'host_a_record_id'), 'new-a');
+  assert.equal(kvGet(db, 'dns_host_label_migrated'), '1');
+  assert.equal(kvGet(db, 'dns_host_record'), 'factorio-stack-manager.games.example.com');
+  assert.equal(
+    db.prepare<{ content: string }>("SELECT content FROM dns_records WHERE server_id = 'alpha'").get()
+      ?.content,
+    'factorio-stack-manager.games.example.com:34197',
+  );
+  assert.equal(
+    db.prepare<{ content: string }>("SELECT content FROM dns_records WHERE server_id = 'beta'").get()
+      ?.content,
+    'factorio-stack-manager.games.example.com:34198',
+  );
+
+  const srvWrites = writes.filter((w) => w.body?.type === 'SRV');
+  assert.equal(srvWrites.length, 2);
+  for (const w of srvWrites) assert.equal(w.body.data.target, 'factorio-stack-manager.games.example.com');
+
+  assert.deepEqual(deleted, ['old-a']);
+  const cnameWrite = writes.find((w) => w.body?.type === 'CNAME');
+  assert.equal(cnameWrite?.body.name, 'factorio-tools-manager.games.example.com');
+  assert.equal(cnameWrite?.body.content, 'factorio-stack-manager.games.example.com');
+
+  const callsBeforeRetry = calls;
+  await dns.migrateHostLabelRename();
+  assert.equal(calls, callsBeforeRetry, 'a second call makes no further Cloudflare requests');
+  db.close();
+});
+
+test('host-label migration leaves the old record alone when it is already gone', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'alpha', 'alpha', 34197);
+  insertLegacySrvRow(db, 'alpha', 'alpha', 34197, 'srv-alpha');
+  kvSet(db, 'last_public_ip', '203.0.113.42');
+
+  const deleted: string[] = [];
+  const writes: { method: string; url: string; body: any }[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      writes.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    }
+    if (method === 'GET' && url.includes('type=A')) return cloudflareResult([]);
+    if (method === 'GET' && !url.includes('type=')) return cloudflareResult([]); // old record already gone
+    if (method === 'POST' && url.endsWith('/dns_records')) {
+      return cloudflareResult({ id: 'new-a' });
+    }
+    if (method === 'PUT') return cloudflareResult({ id: url.split('/').at(-1) });
+    if (method === 'DELETE') {
+      deleted.push(url.split('/').at(-1) ?? '');
+      return cloudflareResult({ id: url.split('/').at(-1) });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  await new DnsService(db).migrateHostLabelRename();
+
+  assert.equal(kvGet(db, 'dns_host_label_migrated'), '1');
+  assert.deepEqual(deleted, []);
+  assert.equal(writes.some((w) => w.body?.type === 'CNAME'), false);
+  db.close();
+});
+
+test('host-label migration retries on the next call after a partial SRV failure', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'alpha', 'alpha', 34197);
+  insertServer(db, 'beta', 'beta', 34198);
+  insertLegacySrvRow(db, 'alpha', 'alpha', 34197, 'srv-alpha');
+  insertLegacySrvRow(db, 'beta', 'beta', 34198, 'srv-beta');
+  kvSet(db, 'last_public_ip', '203.0.113.42');
+
+  let aRecordCreated = false;
+  let betaAttempts = 0;
+  const deleted: string[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (method === 'GET' && url.includes('type=A')) {
+      return cloudflareResult(aRecordCreated ? [{ id: 'new-a', type: 'A', content: '203.0.113.42' }] : []);
+    }
+    if (method === 'GET' && !url.includes('type=')) {
+      return cloudflareResult([
+        { id: 'old-a', type: 'A', name: 'factorio-tools-manager.games.example.com', content: '198.51.100.1' },
+      ]);
+    }
+    if (method === 'POST' && url.endsWith('/dns_records')) {
+      const body = JSON.parse(String(init?.body)) as { type: string };
+      if (body.type === 'A') {
+        aRecordCreated = true;
+        return cloudflareResult({ id: 'new-a' });
+      }
+      if (body.type === 'CNAME') return cloudflareResult({ id: 'cname-1' });
+    }
+    if (method === 'PUT' && url.endsWith('/srv-beta')) {
+      betaAttempts++;
+      if (betaAttempts === 1) return cloudflareFailure('temporary failure');
+      return cloudflareResult({ id: 'srv-beta' });
+    }
+    if (method === 'PUT') return cloudflareResult({ id: url.split('/').at(-1) });
+    if (method === 'DELETE') {
+      deleted.push(url.split('/').at(-1) ?? '');
+      return cloudflareResult({ id: url.split('/').at(-1) });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const dns = new DnsService(db);
+  await dns.migrateHostLabelRename();
+
+  assert.equal(kvGet(db, 'dns_host_label_migrated'), undefined, 'not marked done: beta was not repointed');
+  assert.equal(kvGet(db, 'host_a_record_id'), undefined, 'bookkeeping withheld until every SRV succeeds');
+  assert.deepEqual(deleted, [], 'the old record is untouched until the migration fully succeeds');
+
+  await dns.migrateHostLabelRename();
+
+  assert.equal(kvGet(db, 'dns_host_label_migrated'), '1');
+  assert.equal(kvGet(db, 'host_a_record_id'), 'new-a');
+  assert.equal(
+    db.prepare<{ content: string }>("SELECT content FROM dns_records WHERE server_id = 'beta'").get()
+      ?.content,
+    'factorio-stack-manager.games.example.com:34198',
+  );
+  assert.deepEqual(deleted, ['old-a']);
+  db.close();
 });
