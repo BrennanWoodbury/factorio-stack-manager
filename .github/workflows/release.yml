@@ -44,11 +44,20 @@ jobs:
               ...context.repo,
               commit_sha: sha,
             });
-            const pull = pulls.find((p) => p.merged_at && p.base.ref === 'main' && p.merge_commit_sha === sha)
+            const associatedPull = pulls.find((p) => p.merged_at && p.base.ref === 'main' && p.merge_commit_sha === sha)
               || pulls.find((p) => p.merged_at && p.base.ref === 'main');
+            let pull;
+            if (associatedPull) {
+              const response = await github.rest.pulls.get({
+                ...context.repo,
+                pull_number: associatedPull.number,
+              });
+              pull = response.data;
+            }
             core.setOutput('number', pull?.number || '');
             core.setOutput('author', pull?.user.login || '');
             core.setOutput('head_sha', pull?.head.sha || '');
+            core.setOutput('merged_by', pull?.merged_by?.login || '');
             core.info(pull ? `Commit ${sha} came from PR #${pull.number}` : `No merged PR found for ${sha}`);
 
       - id: policy
@@ -82,13 +91,14 @@ jobs:
         if: steps.policy.outputs.release == 'false'
         run: echo "No shipped runtime or schema change; nothing to publish."
 
-      - name: Require a verified non-author maintainer approval
+      - name: Require approval or authorized merge bypass
         if: steps.policy.outputs.release == 'true'
         uses: actions/github-script@v7
         env:
           PULL_NUMBER: ${{ steps.pr.outputs.number }}
           PR_AUTHOR: ${{ steps.pr.outputs.author }}
           PR_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          PR_MERGED_BY: ${{ steps.pr.outputs.merged_by }}
         with:
           script: |
             if (!process.env.PULL_NUMBER) {
@@ -108,8 +118,34 @@ jobs:
               author: process.env.PR_AUTHOR,
               headSha: process.env.PR_HEAD_SHA,
             });
-            if (!approvals.length) core.setFailed('release needs a current approval from a verified non-author maintainer');
-            else core.info(`Release approved by: ${approvals.join(', ')}`);
+            if (approvals.length) {
+              core.info(`Release approved by: ${approvals.join(', ')}`);
+              return;
+            }
+
+            const merger = process.env.PR_MERGED_BY;
+            let repositoryPermission = '';
+            if (merger) {
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo,
+                  username: merger,
+                });
+                repositoryPermission = response.data.permission || '';
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+            const bypass = policy.authorizedReleaseBypass({
+              actor: merger,
+              trustedMaintainers: new Set(maintainers.keys()),
+              repositoryPermission,
+            });
+            if (!bypass.authorized) {
+              core.setFailed('release needs a current non-author maintainer approval or a merge by a CODEOWNER/repository admin');
+              return;
+            }
+            core.warning(`Release approval bypass accepted: ${merger} merged as ${bypass.reason}`);
 
       - name: Check publishing configuration
         if: steps.policy.outputs.release == 'true'
