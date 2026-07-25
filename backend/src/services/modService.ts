@@ -98,8 +98,17 @@ export class ModService {
       if (!res.ok) throw new AppError(`Mod portal HTTP ${res.status}`, 502, 'MOD_PORTAL');
       const body = (await res.json()) as { results?: PortalListEntry[] };
       this.catalog = (body.results ?? [])
-        // Drop placeholder/internal junk entries with no real title.
-        .filter((r) => r.category !== 'internal' && r.title && r.title !== '[placeholder]')
+        // Drop the portal's reserved/placeholder stubs and the mods that ship with
+        // the game (never portal-fetchable). NOT filtered by category: `internal`
+        // is a real portal category for library/asset mods and holds flib, stdlib,
+        // and the Space Exploration graphics parts other mods hard-depend on.
+        .filter(
+          (r) =>
+            r.title &&
+            r.title !== '[placeholder]' &&
+            r.title !== '[reserved]' &&
+            !BUNDLED_MODS.has(r.name),
+        )
         .map((r) => ({
           name: r.name,
           title: r.title,
