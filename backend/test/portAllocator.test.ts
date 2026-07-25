@@ -84,3 +84,94 @@ test('capacity reports total/used/free correctly', () => {
   assert.deepEqual(alloc.capacity('game'), { total: 3, used: 1, free: 2 });
   assert.deepEqual(alloc.capacity('rcon'), { total: 3, used: 1, free: 2 });
 });
+
+/* ------------------------------------------------------------------ *
+ * Ports held outside this manager
+ * ------------------------------------------------------------------ */
+
+test('a port something else already holds is skipped', () => {
+  // The manager's table only knows what it handed out. A Factorio server run
+  // outside the tool holds a real port, and binding it fails at container start.
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34199], [27015, 27017]);
+  const s = insertServer(db);
+
+  const pair = alloc.allocatePair(s, new Set([34197, 34198, 27015]));
+
+  assert.equal(pair.gamePort, 34199);
+  assert.equal(pair.rconPort, 27016);
+});
+
+test('blocked ports are not permanently consumed', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34199], [27015, 27017]);
+  alloc.allocatePair(insertServer(db), new Set([34197]));
+
+  // Whatever was holding 34197 has gone away; the next server may use it.
+  const next = alloc.allocatePair(insertServer(db));
+  assert.equal(next.gamePort, 34197);
+});
+
+test('a range fully blocked from outside reports exhaustion rather than handing out a bad port', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34198], [27015, 27016]);
+  assert.throws(
+    () => alloc.allocatePair(insertServer(db), new Set([34197, 34198])),
+    PortPoolExhaustedError,
+  );
+  assert.equal(
+    (db.prepare('SELECT COUNT(*) AS n FROM port_allocations').get() as { n: number }).n,
+    0,
+    'the rcon claim rolls back with the failed game claim',
+  );
+});
+
+test('reallocate moves a server off a port and frees the old one', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34199], [27015, 27017]);
+  const s = insertServer(db);
+  const first = alloc.allocatePair(s);
+  assert.equal(first.gamePort, 34197);
+
+  const moved = alloc.reallocate(s, 'game', new Set([34197]));
+
+  assert.equal(moved, 34198);
+  const held = db
+    .prepare("SELECT port FROM port_allocations WHERE kind = 'game' AND server_id = ?")
+    .all(s) as { port: number }[];
+  assert.deepEqual(held.map((r) => r.port), [34198], 'the old claim is gone, not duplicated');
+  // The vacated port is available to the next server.
+  assert.equal(alloc.allocatePair(insertServer(db)).gamePort, 34197);
+});
+
+test('reallocate leaves the original port claimed when there is nowhere to move', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34198], [27015, 27016]);
+  const s = insertServer(db);
+  alloc.allocatePair(s); // 34197
+  alloc.allocatePair(insertServer(db)); // 34198 — range now full
+
+  assert.throws(() => alloc.reallocate(s, 'game', new Set([34197])), PortPoolExhaustedError);
+  const held = db
+    .prepare("SELECT port FROM port_allocations WHERE kind = 'game' AND server_id = ?")
+    .all(s) as { port: number }[];
+  assert.deepEqual(
+    held.map((r) => r.port),
+    [34197],
+    'a server with an unusable port still beats one holding none',
+  );
+});
+
+test('reallocating one kind leaves the other alone', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34199], [27015, 27017]);
+  const s = insertServer(db);
+  const { rconPort } = alloc.allocatePair(s);
+
+  alloc.reallocate(s, 'game', new Set([34197]));
+
+  const rcon = db
+    .prepare("SELECT port FROM port_allocations WHERE kind = 'rcon' AND server_id = ?")
+    .all(s) as { port: number }[];
+  assert.deepEqual(rcon.map((r) => r.port), [rconPort]);
+});
