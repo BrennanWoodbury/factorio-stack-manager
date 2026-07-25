@@ -2,16 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { run, toastError } from '../ui';
 
 /**
- * Reusable player-whitelist editor: one text input per username, a "+" to add
- * another entry, and a per-row remove. Used for both the per-server whitelist and
- * the global whitelist — the parent supplies the load/save calls.
+ * Reusable Factorio user-list editor: one text input per username, a button to add
+ * another entry, and a per-row remove. Used for whitelist and admin-list settings;
+ * the parent supplies the labels and load/save calls.
  */
 export function WhitelistPanel({
   title,
   description,
   load,
   save,
-  addLabel = '+ Add player',
+  addLabel = 'Add user to whitelist',
+  saveLabel = 'Save whitelist',
   hint,
 }: {
   title: string;
@@ -19,6 +20,7 @@ export function WhitelistPanel({
   load: () => Promise<string[]>;
   save: (names: string[]) => Promise<string[]>;
   addLabel?: string;
+  saveLabel?: string;
   /** Footer text given the current count; defaults to whitelist wording. */
   hint?: (count: number) => string;
 }) {
@@ -67,7 +69,7 @@ export function WhitelistPanel({
       <div className="spread" style={{ marginBottom: 8 }}>
         <h2 style={{ margin: 0 }}>{title}</h2>
         <button className="primary" disabled={saving} onClick={() => void onSave()}>
-          {saving ? 'Saving…' : 'Save whitelist'}
+          {saving ? 'Saving…' : saveLabel}
         </button>
       </div>
       {description && (

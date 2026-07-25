@@ -2,6 +2,7 @@ import type {
   ApplyResult,
   BackupInfo,
   CatalogEntry,
+  DnsReconcileResult,
   DnsSettings,
   DraftDto,
   DraftResult,
@@ -299,10 +300,18 @@ export const api = {
     req<{ factorio: FactorioAccount }>('PUT', '/global/factorio', patch),
 
   // dns / cloudflare
-  getDns: () => req<{ dns: DnsSettings }>('GET', '/global/dns'),
-  setDns: (patch: Record<string, unknown>) => req<{ dns: DnsSettings }>('PUT', '/global/dns', patch),
-  testDns: () =>
-    req<{ ok: boolean; zoneName?: string; error?: string }>('POST', '/global/dns/test'),
+  getDns: () =>
+    req<{ dns: DnsSettings; reconciliation?: DnsReconcileResult }>('GET', '/global/dns'),
+  setDns: (patch: Record<string, unknown>) =>
+    req<{ dns: DnsSettings; reconciliation?: DnsReconcileResult }>('PUT', '/global/dns', patch),
+  testDns: (candidate: Record<string, unknown>) =>
+    req<{ ok: boolean; zoneName?: string; publicIp?: string; error?: string }>(
+      'POST',
+      '/global/dns/test',
+      candidate,
+    ),
+  reconcileDns: () =>
+    req<{ reconciliation: DnsReconcileResult }>('POST', '/global/dns/reconcile'),
 
   // rcon
   rcon: (id: string, command: string) =>

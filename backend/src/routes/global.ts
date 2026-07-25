@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { ValidationError } from '../lib/errors.js';
-import { dnsSettingsDto, getDnsSettings, setDnsSettings } from '../services/dnsSettings.js';
+import { dnsSettingsDto, getDnsSettings } from '../services/dnsSettings.js';
 import { factorioAccountDto, getFactorioAccount, setFactorioAccount } from '../services/factorioAccount.js';
 import {
   getGlobalDefaults,
@@ -28,7 +28,10 @@ export function globalRouter(ctx: AppContext): Router {
   r.get(
     '/dns',
     asyncHandler(async (_req, res) => {
-      res.json({ dns: dnsSettingsDto(getDnsSettings(ctx.db)) });
+      res.json({
+        dns: dnsSettingsDto(getDnsSettings(ctx.db)),
+        reconciliation: ctx.dns.reconciliationStatus(),
+      });
     }),
   );
 
@@ -38,26 +41,46 @@ export function globalRouter(ctx: AppContext): Router {
       const body = parse(
         z.object({
           baseDomain: z.string().max(253).optional(),
-          hostRecordName: z.string().max(253).optional(),
           cloudflareZoneId: z.string().max(64).optional(),
           // Only sent when the admin (re)enters it. '' explicitly clears it.
           cloudflareToken: z.string().max(200).optional(),
           ddnsIntervalSeconds: z.number().int().min(30).max(86400).optional(),
           ipCheckUrl: z.string().url().max(300).optional(),
+          expectedRevision: z.number().int().nonnegative().optional(),
         }),
         req.body,
       );
-      setDnsSettings(ctx.db, body);
+      const { expectedRevision, ...patch } = body;
+      const activated = await ctx.dns.activateSettings(patch, expectedRevision);
       // Apply interval / enabled-state changes to the running DDNS job immediately.
       ctx.ddns.reschedule();
-      res.json({ dns: dnsSettingsDto(getDnsSettings(ctx.db)) });
+      res.json({
+        dns: dnsSettingsDto(activated.settings),
+        reconciliation: activated.reconciliation,
+      });
     }),
   );
 
   r.post(
     '/dns/test',
+    asyncHandler(async (req, res) => {
+      const candidate = parse(
+        z.object({
+          baseDomain: z.string().max(253).optional(),
+          cloudflareZoneId: z.string().max(64).optional(),
+          cloudflareToken: z.string().max(200).optional(),
+          ipCheckUrl: z.string().url().max(300).optional(),
+        }),
+        req.body,
+      );
+      res.json(await ctx.dns.testConnection(candidate));
+    }),
+  );
+
+  r.post(
+    '/dns/reconcile',
     asyncHandler(async (_req, res) => {
-      res.json(await ctx.dns.testConnection());
+      res.json({ reconciliation: await ctx.dns.reconcile() });
     }),
   );
 

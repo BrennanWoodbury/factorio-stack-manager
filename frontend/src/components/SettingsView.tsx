@@ -50,7 +50,8 @@ const SECTIONS: Subsection[] = [
       <WhitelistPanel
         title="Global admins"
         description="These Factorio usernames are admins on every server, on top of each server's own admin list. Applies to each server on its next start/restart."
-        addLabel="+ Add admin"
+        addLabel="Add user to admin list"
+        saveLabel="Save admin list"
         hint={(n) => (n === 0 ? 'No global admins.' : `${n} admin${n === 1 ? '' : 's'}.`)}
         load={async () => (await api.getGlobalAdminlist()).adminlist}
         save={async (names) => (await api.setGlobalAdminlist(names)).adminlist}
@@ -107,7 +108,9 @@ export function SettingsView() {
           </div>
         ))}
       </nav>
-      <div className="settings-content">{current.render()}</div>
+      <div key={current.key} className="settings-content">
+        {current.render()}
+      </div>
     </div>
   );
 }
