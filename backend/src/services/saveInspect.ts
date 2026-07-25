@@ -206,3 +206,15 @@ export function bundledModsFor(
 ): string[] {
   return header.mods.filter((m) => m.name !== 'base' && bundled.has(m.name)).map((m) => m.name);
 }
+
+/**
+ * The game mode a server built from this save should run as.
+ *
+ * Always one of the "+ mods" modes: the save's own header dictates its mod set, so
+ * the mode must not enforce a bundled set of its own. Which one it is says whether
+ * the world sits on Space Age or plain Nauvis — that's what the map-gen sliders and
+ * the planet list read, and what the user sees named in the UI.
+ */
+export function gameModeForSave(header: SaveHeader): 'modded_vanilla' | 'modded_space_age' {
+  return header.mods.some((m) => m.name === 'space-age') ? 'modded_space_age' : 'modded_vanilla';
+}

@@ -238,9 +238,13 @@ export function CreateServerForm({
     if (!f || !draftId) return;
     setUploading(true);
     try {
-      const { saveName, gameVersion, mods } = await api.uploadDraftSave(draftId, f);
+      const { saveName, gameVersion, mods, gameMode: detected } = await api.uploadDraftSave(draftId, f);
       setSavedSaveName(saveName);
       setSaveInfo(gameVersion || mods ? { gameVersion, mods } : null);
+      // Adopt the mode read from the save. Without this the autosave below would
+      // push the wizard's default (Space Age) straight back over it, and the world
+      // would come up with an expansion it was never built with.
+      if (detected) setGameMode(detected);
       toastSuccess(`Uploaded “${saveName}”`);
     } catch (err) {
       toastError((err as Error).message);
@@ -630,16 +634,21 @@ export function CreateServerForm({
                           <div className="small muted">No mods — this is a vanilla save.</div>
                         )}
                         <div className="small muted" style={{ marginTop: 8 }}>
-                          Test &amp; Create installs these at these exact versions, then boots the
-                          save to verify.
+                          Game mode:{' '}
+                          <strong>{gameMode === 'modded_space_age' ? 'Space Age + modded' : 'Vanilla + modded'}</strong>{' '}
+                          — read from the save, so its own mod set is what runs.
+                        </div>
+                        <div className="small muted" style={{ marginTop: 6 }}>
+                          These are installed at these exact versions when the server is created,
+                          and Test boots the save to verify them.
                         </div>
                       </div>
                     )}
                   </>
                 ) : (
                   <div className="small muted" style={{ marginTop: 8 }}>
-                    Upload an existing Factorio save. Its mods are read from the file itself, then
-                    installed and verified by Test &amp; Create.
+                    Upload an existing Factorio save. Its mods and game mode are read from the file
+                    itself, and installed when the server is created.
                   </div>
                 )}
               </div>

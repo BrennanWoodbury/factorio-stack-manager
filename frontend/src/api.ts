@@ -104,6 +104,8 @@ export const api = {
       saveName: string;
       gameVersion?: string;
       mods?: { name: string; version: string }[];
+      /** Mode read from the save: "Vanilla + modded" or "Space Age + modded". */
+      gameMode?: string;
     };
   },
   getSettings: (id: string) =>

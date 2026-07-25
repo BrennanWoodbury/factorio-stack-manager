@@ -12,6 +12,19 @@ import { getGlobalDefaults } from '../services/globalDefaults.js';
 
 const modEntrySchema = z.object({ name: z.string().min(1), enabled: z.boolean() });
 
+/**
+ * Game modes. The "+ mods" pair say which base a custom mod set sits on; a save
+ * draft adopts one from its own header rather than enforcing a bundled set.
+ */
+const GAME_MODE_VALUES = z.enum([
+  'vanilla',
+  'space_age',
+  'space_age_no_quality',
+  'modded',
+  'modded_vanilla',
+  'modded_space_age',
+]);
+
 const createSchema = z.object({
   name: z.string().min(1).max(100),
   subdomain: z.string().min(1).max(63),
@@ -22,7 +35,7 @@ const createSchema = z.object({
   factorioTag: z.string().max(128).optional(),
   autoRestart: z.boolean().optional(),
   dnsEnabled: z.boolean().optional(),
-  gameMode: z.enum(['vanilla', 'space_age', 'space_age_no_quality', 'modded']).optional(),
+  gameMode: GAME_MODE_VALUES.optional(),
   mods: z.array(modEntrySchema).optional(),
   // Initial map generation: raw settings, or a template id to copy settings from.
   mapGen: z.record(z.string(), z.unknown()).optional(),
@@ -39,14 +52,12 @@ const updateSchema = z.object({
   factorioTag: z.string().max(128).optional(),
   autoRestart: z.boolean().optional(),
   dnsEnabled: z.boolean().optional(),
-  gameMode: z.enum(['vanilla', 'space_age', 'space_age_no_quality', 'modded']).optional(),
+  gameMode: GAME_MODE_VALUES.optional(),
   autoBackup: z.boolean().optional(),
   backupIntervalMinutes: z.number().int().min(5).max(10080).optional(),
   backupKeep: z.number().int().min(1).max(1000).optional(),
   backupKeepManual: z.number().int().min(1).max(1000).optional(),
 });
-
-const gameModeSchema = z.enum(['vanilla', 'space_age', 'space_age_no_quality', 'modded']);
 
 // A new-server wizard draft: created lazily when a mode is picked, then PATCHed as
 // the user progresses. All fields optional except the source flow.
@@ -57,7 +68,7 @@ const draftCreateSchema = z.object({
   maxPlayers: z.number().int().min(0).max(500).optional(),
   description: z.string().max(1000).optional(),
   factorioTag: z.string().max(128).optional(),
-  gameMode: gameModeSchema.optional(),
+  gameMode: GAME_MODE_VALUES.optional(),
   mapGen: z.record(z.string(), z.unknown()).optional(),
   mods: z.array(modEntrySchema).optional(),
 });
@@ -69,7 +80,7 @@ const draftPatchSchema = z.object({
   maxPlayers: z.number().int().min(0).max(500).optional(),
   description: z.string().max(1000).optional(),
   factorioTag: z.string().max(128).optional(),
-  gameMode: gameModeSchema.optional(),
+  gameMode: GAME_MODE_VALUES.optional(),
   mapGen: z.record(z.string(), z.unknown()).optional(),
   mapSettings: z.record(z.string(), z.unknown()).optional(),
   mods: z.array(modEntrySchema).optional(),
@@ -200,10 +211,17 @@ export function serversRouter(ctx: AppContext): Router {
         /* ignore */
       }
       const { start } = parse(z.object({ start: z.boolean().optional() }), req.body ?? {});
-      const row = await manager.finalize(req.params.id);
+      const row = await manager.finalize(req.params.id, {
+        // Load-from-save: fetch what the save's header says it needs, pinned to the
+        // versions the world was built with.
+        downloadMod: async (name, version) =>
+          void (await ctx.mods.downloadMod(manager.getDraft(req.params.id), name, version)),
+      });
       // Default modpack (creation-time) when the draft chose no mods — mirrors POST /.
+      // Never for an uploaded save: its own header decides its mod set, and a pack
+      // layered on top is how a world comes up with mods it was never built with.
       const defaults = getGlobalDefaults(ctx.db);
-      if (!state.mods?.length && defaults.modpackId) {
+      if (state.source !== 'save' && !state.mods?.length && defaults.modpackId) {
         try {
           await ctx.modpacks.apply(defaults.modpackId, row.id);
         } catch (err) {
@@ -235,8 +253,13 @@ export function serversRouter(ctx: AppContext): Router {
       const createAfter = req.query.create !== '0';
       const start = createAfter && req.query.start === '1';
       let mods: DraftState['mods'];
+      let source: DraftState['source'] = 'generate';
       try {
-        if (draft.draft_state_json) mods = (JSON.parse(draft.draft_state_json) as DraftState).mods;
+        if (draft.draft_state_json) {
+          const state = JSON.parse(draft.draft_state_json) as DraftState;
+          mods = state.mods;
+          source = state.source;
+        }
       } catch {
         /* ignore */
       }
@@ -258,8 +281,9 @@ export function serversRouter(ctx: AppContext): Router {
       try {
         send('status', { message: 'Preparing…' });
         // Apply the default modpack up front so the probe tests the real mod set.
+        // Never for an uploaded save — its header owns its mod set (see finalize).
         const defaults = getGlobalDefaults(ctx.db);
-        if (!mods?.length && defaults.modpackId) {
+        if (source !== 'save' && !mods?.length && defaults.modpackId) {
           send('status', { message: 'Downloading default modpack…' });
           try {
             await ctx.modpacks.apply(defaults.modpackId, id);
@@ -293,7 +317,10 @@ export function serversRouter(ctx: AppContext): Router {
         }
 
         send('status', { message: 'Test passed — creating server…' });
-        const row = await manager.finalize(id);
+        const row = await manager.finalize(id, {
+          downloadMod: async (name, version) =>
+            void (await ctx.mods.downloadMod(manager.getDraft(id), name, version)),
+        });
         let started = false;
         if (start) {
           send('status', { message: 'Starting server…' });

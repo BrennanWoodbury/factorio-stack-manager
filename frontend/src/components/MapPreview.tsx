@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { MapGenSettings } from '../types';
 import { toastError } from '../ui';
-import { previewPlanetsForMode } from './MapGenEditor';
+import { isModdedMode, previewPlanetsForMode } from './MapGenEditor';
 import { ExperimentalNote } from './ExperimentalNote';
 
 /**
@@ -84,7 +84,7 @@ export function MapPreview({
         <span className="small muted">{activeLabel} · renders your current (unsaved) settings</span>
       </div>
 
-      {mode === 'modded' && (
+      {isModdedMode(mode) && (
         <ExperimentalNote style={{ marginTop: 8 }}>
           Previews render with this server's mods loaded — some mod sets won't render.
         </ExperimentalNote>

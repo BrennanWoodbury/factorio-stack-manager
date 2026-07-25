@@ -198,11 +198,14 @@ It applies the `unraid` label automatically so reports remain searchable in this
   (map-gen settings, game mode) discards the tested map so the next run really re-generates it.
 - **Load from save:** upload a `.zip` and the manager reads the save's own header (`level-init.dat`)
   directly — no container boot — to report the exact **Factorio version**, scenario and **full mod
-  list with pinned versions**, shown as chips the moment the upload finishes. Bundled expansion mods
-  are enabled from that list; mod-portal mods are downloaded **at the versions the world was built
-  with**. If a required mod can't be fetched, creation fails loudly — which matters because Factorio
-  itself does *not* error on a save with missing mods, it silently drops them and hosts a gutted
-  world.
+  list with pinned versions**, shown as chips the moment the upload finishes. That header is then
+  what decides the server's mod set, **on every path that creates it** — testing first is optional,
+  not how the mods get installed. Bundled expansion mods are switched on (and off) to match it
+  exactly; mod-portal mods are downloaded **at the versions the world was built with**. If a
+  required mod can't be fetched, creation fails loudly — which matters because Factorio itself does
+  *not* error on a save with missing mods, it silently drops them and hosts a gutted world. The
+  draft also adopts its **game mode from the save** (see below), so an uploaded world is never given
+  an expansion it was never built with, and the global default modpack is never layered on top of one.
 - **Container logs:** a live viewer for the container's stdout/stderr (separate from the RCON
   console), streamed over SSE with scrollback, follow-tail, error/warning highlighting, download,
   and automatic re-attach when the server restarts. Works on a stopped server too — you still see
@@ -239,11 +242,14 @@ It applies the `unraid` label automatically so reports remain searchable in this
   alter an existing world. `map-settings.json` (pollution/evolution/expansion) is left to the image's
   version-matched example — Factorio validates it strictly against the exact binary version, so a
   hand-written one isn't safe.
-- **Game modes:** each server is **Vanilla**, **Space Age**, **Space Age — without Quality**, or
-  **Modded** (chosen in the create wizard, editable on the Map gen tab). The mode drives which
-  map-gen sliders show — Vanilla is Nauvis-only; the Space Age modes show curated **per-planet**
-  resource sliders (Nauvis, Vulcanus, Gleba, Fulgora, Aquilo) — and sets which bundled expansion
-  mods are enabled on next start. For **Modded** servers, a **Detect resources from mods** button
+- **Game modes:** each server is **Vanilla**, **Space Age**, **Space Age — without Quality**,
+  **Vanilla + modded** or **Space Age + modded** (chosen in the create wizard, editable on the Map
+  gen tab). The mode drives which map-gen sliders show — Vanilla is Nauvis-only; the Space Age
+  modes show curated **per-planet** resource sliders (Nauvis, Vulcanus, Gleba, Fulgora, Aquilo) —
+  and sets which bundled expansion mods are enabled on next start. The two **+ modded** modes name
+  which base a custom mod set sits on while leaving the mod list itself to whatever owns it (a
+  modpack, or an uploaded save's header); servers created before those existed show as **Modded**
+  and keep working. For a modded server, a **Detect resources from mods** button
   runs the mod set once (`get_map_exchange_string` → parsed to JSON) to populate **dynamic sliders**
   for that modpack's actual resource controls.
 - **Bundled mods are read from the image, not hardcoded:** which expansion mods a mode enables is
