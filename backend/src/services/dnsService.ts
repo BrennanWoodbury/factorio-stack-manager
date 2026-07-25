@@ -5,8 +5,10 @@ import { CloudflareClient, type SrvData } from '../lib/cloudflare.js';
 import { CloudflareError } from '../lib/errors.js';
 import {
   dnsEnabled,
+  deriveHostRecordName,
   getDnsSettings,
   setDnsSettings,
+  storedHostRecordName,
   type DnsSettings,
   type DnsSettingsPatch,
 } from './dnsSettings.js';
@@ -97,19 +99,18 @@ export class DnsService {
 
   private candidateSettings(candidate: DnsSettingsPatch = {}): DnsSettings {
     const current = this.settings();
+    const baseDomain =
+      candidate.baseDomain === undefined
+        ? current.baseDomain
+        : candidate.baseDomain.trim().toLowerCase().replace(/\.$/, '');
     return {
-      baseDomain:
-        candidate.baseDomain === undefined
-          ? current.baseDomain
-          : candidate.baseDomain.trim().toLowerCase().replace(/\.$/, ''),
-      hostRecordName:
-        candidate.hostRecordName === undefined
-          ? current.hostRecordName
-          : candidate.hostRecordName.trim().toLowerCase().replace(/\.$/, ''),
+      baseDomain,
+      hostRecordName: deriveHostRecordName(baseDomain),
       cloudflareZoneId:
         candidate.cloudflareZoneId === undefined
           ? current.cloudflareZoneId
           : candidate.cloudflareZoneId.trim(),
+      cloudflareZoneName: current.cloudflareZoneName,
       cloudflareToken:
         candidate.cloudflareToken === undefined
           ? current.cloudflareToken
@@ -253,7 +254,7 @@ export class DnsService {
     if (!s.cloudflareToken || !s.cloudflareZoneId || !s.baseDomain || !s.hostRecordName) {
       return {
         ok: false,
-        error: 'Server domain, host record, API token and Zone ID are required',
+        error: 'Server domain, API token and Zone ID are required',
       };
     }
     try {
@@ -277,8 +278,16 @@ export class DnsService {
       }
 
       // A read proves that the token is scoped to DNS in this zone without making
-      // the test itself mutate customer records.
-      await cf.findRecords('A', s.hostRecordName);
+      // the test itself mutate customer records. Query every type so an existing
+      // CNAME is reported here instead of failing later during activation.
+      const hostRecords = await cf.findRecordsByName(s.hostRecordName);
+      if (hostRecords.some((record) => record.type.toUpperCase() === 'CNAME')) {
+        return {
+          ok: false,
+          zoneName,
+          error: `Generated host record ${s.hostRecordName} conflicts with an existing CNAME. Remove or rename that CNAME, then test again.`,
+        };
+      }
 
       const publicIp = await this.detectPublicIp(s.ipCheckUrl);
       return { ok: true, zoneName, publicIp };
@@ -484,7 +493,8 @@ export class DnsService {
       !dnsEnabled(current) ||
       current.cloudflareZoneId !== candidate.cloudflareZoneId ||
       current.baseDomain !== candidate.baseDomain ||
-      current.hostRecordName !== candidate.hostRecordName;
+      current.hostRecordName !== candidate.hostRecordName ||
+      storedHostRecordName(this.db) !== candidate.hostRecordName;
     const run = await this.executeReconciliation(candidate, tested.publicIp, topologyChanged);
     this.lastReconciliation = run.result;
     if (!run.result.ok) {
@@ -496,7 +506,10 @@ export class DnsService {
       throw new CloudflareError(`DNS activation failed: ${failures}`);
     }
 
-    setDnsSettings(this.db, candidate);
+    setDnsSettings(this.db, {
+      ...candidate,
+      cloudflareZoneName: tested.zoneName ?? '',
+    });
     this.commitBookkeeping(run);
     await this.deleteStaleTrackedRecords(current, oldARecordId, oldSrvRows, run);
     return { settings: this.settings(), reconciliation: run.result };
@@ -510,8 +523,14 @@ export class DnsService {
       .prepare<DnsRecordRow>("SELECT * FROM dns_records WHERE type = 'SRV'")
       .all();
     const run = await this.executeReconciliation(settings);
-    this.commitBookkeeping(run);
-    await this.deleteStaleTrackedRecords(settings, oldARecordId, oldSrvRows, run);
+    // A topology migration may create the new A record before one of the SRV
+    // updates fails. Preserve the old bookkeeping and records until the entire
+    // desired topology succeeds; the next run rediscovers successful records by
+    // name and can finish the swap without stranding an instance.
+    if (run.result.ok) {
+      this.commitBookkeeping(run);
+      await this.deleteStaleTrackedRecords(settings, oldARecordId, oldSrvRows, run);
+    }
     this.lastReconciliation = run.result;
     return run.result;
   }

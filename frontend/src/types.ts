@@ -206,6 +206,7 @@ export interface DnsSettings {
   baseDomain: string;
   hostRecordName: string;
   cloudflareZoneId: string;
+  cloudflareZoneName: string;
   hasToken: boolean;
   ddnsIntervalSeconds: number;
   ipCheckUrl: string;

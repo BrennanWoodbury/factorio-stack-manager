@@ -41,7 +41,6 @@ export function globalRouter(ctx: AppContext): Router {
       const body = parse(
         z.object({
           baseDomain: z.string().max(253).optional(),
-          hostRecordName: z.string().max(253).optional(),
           cloudflareZoneId: z.string().max(64).optional(),
           // Only sent when the admin (re)enters it. '' explicitly clears it.
           cloudflareToken: z.string().max(200).optional(),
@@ -66,7 +65,6 @@ export function globalRouter(ctx: AppContext): Router {
       const candidate = parse(
         z.object({
           baseDomain: z.string().max(253).optional(),
-          hostRecordName: z.string().max(253).optional(),
           cloudflareZoneId: z.string().max(64).optional(),
           cloudflareToken: z.string().max(200).optional(),
           ipCheckUrl: z.string().url().max(300).optional(),
