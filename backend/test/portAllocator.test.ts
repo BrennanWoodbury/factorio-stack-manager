@@ -78,11 +78,63 @@ test('rolls back game claim when rcon range is exhausted', () => {
 test('capacity reports total/used/free correctly', () => {
   const db = freshDb();
   const alloc = new PortAllocator(db, [34197, 34199], [27015, 27017]); // 3 each
-  assert.deepEqual(alloc.capacity('game'), { total: 3, used: 0, free: 3 });
+  assert.deepEqual(alloc.capacity('game'), { total: 3, used: 0, external: 0, free: 3 });
   const s = insertServer(db);
   alloc.allocatePair(s);
-  assert.deepEqual(alloc.capacity('game'), { total: 3, used: 1, free: 2 });
-  assert.deepEqual(alloc.capacity('rcon'), { total: 3, used: 1, free: 2 });
+  assert.deepEqual(alloc.capacity('game'), { total: 3, used: 1, external: 0, free: 2 });
+  assert.deepEqual(alloc.capacity('rcon'), { total: 3, used: 1, external: 0, free: 2 });
+});
+
+test('capacity counts ports held outside the manager as unavailable', () => {
+  // Three Factorio servers running outside the tool occupy three of our ports,
+  // and reporting them free would promise capacity that does not exist.
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34200], [27015, 27018]); // 4 each
+
+  assert.deepEqual(alloc.capacity('game', new Set([34197, 34198, 34199])), {
+    total: 4,
+    used: 0,
+    external: 3,
+    free: 1,
+  });
+});
+
+test('a port is never counted twice when it is both ours and on the host', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34200], [27015, 27018]);
+  const s = insertServer(db);
+  const { gamePort } = alloc.allocatePair(s); // 34197, and its container publishes it
+
+  assert.deepEqual(alloc.capacity('game', new Set([gamePort, 34198])), {
+    total: 4,
+    used: 1,
+    external: 1,
+    free: 2,
+  });
+});
+
+test('host ports outside the range are ignored', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34199], [27015, 27017]);
+
+  // A web server on 8080 and an unrelated game on 34500 say nothing about our pool.
+  assert.deepEqual(alloc.capacity('game', new Set([8080, 34500, 27015])), {
+    total: 3,
+    used: 0,
+    external: 0,
+    free: 3,
+  });
+  // ...though 27015 does land in the rcon range.
+  assert.equal(alloc.capacity('rcon', new Set([8080, 34500, 27015])).external, 1);
+});
+
+test('a full range held entirely from outside reports nothing free', () => {
+  const db = freshDb();
+  const alloc = new PortAllocator(db, [34197, 34199], [27015, 27017]);
+
+  const c = alloc.capacity('game', new Set([34197, 34198, 34199]));
+  assert.equal(c.free, 0);
+  assert.equal(c.used, 0, 'none of it is ours');
 });
 
 /* ------------------------------------------------------------------ *
