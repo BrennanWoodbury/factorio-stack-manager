@@ -171,6 +171,14 @@ export class DockerService {
     return list.length;
   }
 
+  /** IDs of servers with a currently-running (managed) container. */
+  async runningServerIds(): Promise<string[]> {
+    const list = await this.docker.listContainers({
+      filters: { label: [`${MANAGED_LABEL}=true`] },
+    });
+    return list.map((c) => c.Labels?.[SERVER_ID_LABEL]).filter((id): id is string => !!id);
+  }
+
   /**
    * Host ports currently published by *any* container, ours or not.
    *

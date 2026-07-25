@@ -114,6 +114,9 @@ export const api = {
     req<{ settings: Record<string, unknown> }>('GET', '/global/advanced-settings'),
   setGlobalAdvancedSettings: (settings: Record<string, unknown>) =>
     req<{ settings: Record<string, unknown> }>('PUT', '/global/advanced-settings', { settings }),
+  getRunningCount: () => req<{ count: number }>('GET', '/global/running-count'),
+  restartRunning: () =>
+    req<{ restarted: string[]; failed: { id: string; error: string }[] }>('POST', '/global/restart-running'),
 
   start: (id: string) => req<{ ok: boolean }>('POST', `/servers/${id}/start`),
   stop: (id: string) => req<{ ok: boolean }>('POST', `/servers/${id}/stop`),
