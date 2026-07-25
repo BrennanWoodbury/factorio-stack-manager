@@ -200,6 +200,9 @@ export function MapGenEditor({
 }) {
   const [templates, setTemplates] = useState<MapGenTemplate[]>([]);
   const [bulk, setBulk] = useState(false);
+  // Which template is currently loaded, and what it looked like when it was — so
+  // the picker can name it, and say when the sliders have since moved away from it.
+  const [loaded, setLoaded] = useState<{ id: string; snapshot: string } | null>(null);
 
   const loadTemplates = useCallback(async () => {
     if (!showTemplates) return;
@@ -259,11 +262,16 @@ export function MapGenEditor({
   const seed = typeof seedRaw === 'number' ? String(seedRaw) : '';
 
   const applyTemplate = async (id: string) => {
-    if (!id) return;
+    if (!id) {
+      setLoaded(null);
+      return;
+    }
     try {
       const t = await api.getMapGenTemplate(id);
       onChange(t.settings);
+      setLoaded({ id, snapshot: JSON.stringify(t.settings) });
     } catch (err) {
+      // Leave the picker showing whatever is really loaded, not the failed pick.
       toastError((err as Error).message);
     }
   };
@@ -276,6 +284,10 @@ export function MapGenEditor({
     );
     if (ok) await loadTemplates();
   };
+
+  // Settings have been edited since the template was loaded. Compared by value
+  // because every edit path rebuilds the object rather than mutating it.
+  const drifted = loaded !== null && JSON.stringify(value) !== loaded.snapshot;
 
   const controlSliders = (c: Ctrl) => (
     <Group key={c.key} title={c.label}>
@@ -307,11 +319,9 @@ export function MapGenEditor({
       {showTemplates && (
         <div className="row" style={{ marginBottom: 14, flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <select
-            defaultValue=""
-            onChange={(e) => {
-              void applyTemplate(e.target.value);
-              e.target.value = '';
-            }}
+            aria-label="World generation template"
+            value={loaded?.id ?? ''}
+            onChange={(e) => void applyTemplate(e.target.value)}
             style={{ maxWidth: 220 }}
           >
             <option value="">Load a template…</option>
@@ -321,6 +331,16 @@ export function MapGenEditor({
               </option>
             ))}
           </select>
+          {/* Re-selecting the same option fires no change event, so an explicit
+              reload is the only way back to the template once sliders have moved. */}
+          {loaded && drifted && (
+            <>
+              <span className="small muted">modified</span>
+              <button type="button" className="small ghost" onClick={() => void applyTemplate(loaded.id)}>
+                Reload
+              </button>
+            </>
+          )}
           <button type="button" className="small" onClick={() => void saveAsTemplate()}>
             Save as template
           </button>

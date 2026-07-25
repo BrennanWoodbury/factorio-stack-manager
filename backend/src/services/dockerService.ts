@@ -50,6 +50,20 @@ export function containerStatusLabel(cs: ContainerStatus): string {
 }
 
 /**
+ * Host ports Docker named in a bind failure, e.g.
+ *   Bind for 0.0.0.0:34197 failed: port is already allocated
+ *
+ * Empty when the error isn't a port conflict, which is how callers tell the two
+ * apart — there is no status code that distinguishes it.
+ */
+export function conflictingHostPorts(err: unknown): number[] {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  if (!/port is already allocated|address already in use/i.test(message)) return [];
+  const ports = [...message.matchAll(/Bind for [^\s]*?:(\d+)/g)].map((m) => Number(m[1]));
+  return ports.filter((p) => Number.isInteger(p) && p > 0);
+}
+
+/**
  * Wraps dockerode to create/start/stop/remove the per-server Factorio containers.
  *
  * Port mapping (the crux of the networking model):
@@ -155,6 +169,34 @@ export class DockerService {
       }),
     );
     return list.length;
+  }
+
+  /**
+   * Host ports currently published by *any* container, ours or not.
+   *
+   * The allocator's table only knows what this manager handed out; a Factorio
+   * server someone runs from another compose file holds a real port that would
+   * otherwise be handed out and fail at start. Only running containers publish
+   * bindings, so stopped ones are excluded on purpose.
+   *
+   * This cannot see a native process holding a port — nothing short of binding it
+   * can, and the manager runs in its own network namespace. That case is caught
+   * at start instead, where Docker reports the conflict.
+   */
+  async hostPortsInUse(): Promise<Set<number>> {
+    const ports = new Set<number>();
+    try {
+      for (const c of await this.docker.listContainers()) {
+        for (const p of c.Ports ?? []) {
+          if (typeof p.PublicPort === 'number') ports.add(p.PublicPort);
+        }
+      }
+    } catch (err) {
+      // Never block an allocation on this: it is an optimisation over the
+      // authoritative check, which is the bind itself.
+      console.warn(`[docker] could not list published ports: ${(err as Error).message}`);
+    }
+    return ports;
   }
 
   async ping(): Promise<void> {
