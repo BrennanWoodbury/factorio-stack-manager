@@ -19,11 +19,13 @@ function harness() {
   const packs = new ModpacksRepo(db);
   const servers = new ServersRepo(db);
   const applied: { server: ServerRow; entries: ModEntry[] }[] = [];
+  const state = { missing: [] as string[] };
   const mods = {
     applyModList: async (server: ServerRow, entries: ModEntry[]) => {
       applied.push({ server, entries });
       return { downloaded: entries.map((e) => ({ name: e.name, version: '1.0.0' })), errors: [] };
     },
+    missingMods: () => state.missing,
   } as unknown as ModService;
 
   packs.insert({ id: 'pack1', name: 'Ribbon World', description: '', factorio_version: '2.0' });
@@ -32,7 +34,16 @@ function harness() {
     { name: 'space-exploration', enabled: true, version: null },
   ]);
 
-  return { db, packs, servers, applied, service: new ModpackService(packs, servers, mods) };
+  return {
+    db,
+    packs,
+    servers,
+    applied,
+    service: new ModpackService(packs, servers, mods),
+    set missing(names: string[]) {
+      state.missing = names;
+    },
+  };
 }
 
 function insertRow(db: ReturnType<typeof openDb>, id: string, lifecycle: string): void {
@@ -87,4 +98,29 @@ test('a draft is excluded from the operational listing it would pollute', () => 
     'drafts stay out of the server list even once they hold mods',
   );
   assert.ok(h.servers.getById('draft1'), 'but are still addressable by id');
+});
+
+/* ------------------------------------------------------------------ *
+ * Downloading on demand
+ * ------------------------------------------------------------------ */
+
+test('plan reports which of a pack\'s mods are not downloaded yet', () => {
+  // Applying writes the mod list and only then downloads, so a failure part-way
+  // leaves a list naming mods the server does not have. Asking first is what
+  // stops that state being created by surprise.
+  const h = harness();
+  insertRow(h.db, 'srv1', 'active');
+  h.missing = ['flib', 'Milestones'];
+
+  const plan = h.service.plan('pack1', 'srv1');
+
+  assert.deepEqual(plan.mods, ['flib', 'space-exploration']);
+  assert.deepEqual(plan.missing, ['flib', 'Milestones']);
+});
+
+test('plan refuses an unknown pack or server rather than reporting nothing missing', () => {
+  const h = harness();
+  insertRow(h.db, 'srv1', 'active');
+  assert.throws(() => h.service.plan('nope', 'srv1'), /Modpack/);
+  assert.throws(() => h.service.plan('pack1', 'nope'), /Server/);
 });

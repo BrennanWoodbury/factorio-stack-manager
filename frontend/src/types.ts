@@ -117,10 +117,10 @@ export interface MapGenTemplate {
   description: string;
   createdAt: string;
   updatedAt: string;
-}
-export interface MapGenTemplateDetail extends MapGenTemplate {
+  /** Included in listings so a settings object can be traced back to its template. */
   settings: MapGenSettings;
 }
+export type MapGenTemplateDetail = MapGenTemplate;
 
 export interface BackupInfo {
   name: string;
@@ -283,6 +283,18 @@ export interface DnsReconcileResult {
   records: DnsReconcileRecordResult[];
 }
 
+/**
+ * `used` is what this manager allocated; `external` is ports in the range held by
+ * other containers on the host. Both are unavailable, so `free` excludes them.
+ */
+export interface PortCapacity {
+  range: [number, number];
+  total: number;
+  used: number;
+  external: number;
+  free: number;
+}
+
 export interface SystemStatus {
   /** Build identity of the running manager ("dev" for a local build). */
   version?: string;
@@ -297,7 +309,7 @@ export interface SystemStatus {
     intervalSeconds: number;
   };
   ports: {
-    game: { range: [number, number]; total: number; used: number; free: number };
-    rcon: { range: [number, number]; total: number; used: number; free: number };
+    game: PortCapacity;
+    rcon: PortCapacity;
   };
 }

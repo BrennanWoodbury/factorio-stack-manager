@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { MapGenSettings, MapGenTemplate } from '../types';
-import { run, toastError } from '../ui';
+import { run, toastError, toastSuccess } from '../ui';
 import { ExperimentalNote } from './ExperimentalNote';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -187,6 +187,29 @@ function dynamicControls(value: MapGenSettings): Ctrl[] {
  * map-generation sliders, grouped per planet according to the game mode. The parent
  * owns persistence — this only reads `value` and emits `onChange`.
  */
+/**
+ * Whether two settings objects mean the same thing. Compared through a
+ * key-sorted serialisation rather than `JSON.stringify` alone, because the same
+ * settings arrive with different key order depending on where they came from —
+ * the template endpoint, a resumed draft, or the editor's own writes.
+ */
+export function sameSettings(a: unknown, b: unknown): boolean {
+  return canonical(a) === canonical(b);
+}
+
+function canonical(v: unknown): string {
+  // Distinct tokens: JSON.stringify renders undefined as undefined, which would
+  // otherwise make it indistinguishable from null.
+  if (v === undefined) return '?';
+  if (v === null) return 'null';
+  if (typeof v !== 'object') return JSON.stringify(v) as string;
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  const entries = Object.entries(v as Record<string, unknown>)
+    .filter(([, val]) => val !== undefined)
+    .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+  return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${canonical(val)}`).join(',')}}`;
+}
+
 export function MapGenEditor({
   value,
   onChange,
@@ -200,6 +223,18 @@ export function MapGenEditor({
 }) {
   const [templates, setTemplates] = useState<MapGenTemplate[]>([]);
   const [bulk, setBulk] = useState(false);
+  // Which template is currently loaded, and what it looked like when it was — so
+  // the picker can name it, and say when the sliders have since moved away from it.
+  const [loaded, setLoaded] = useState<{ id: string; snapshot: string } | null>(null);
+  // Settings often arrive with no record of where they came from: a resumed wizard
+  // draft, or the global default template applied at creation. Recognising them
+  // means the picker names the template instead of claiming none is loaded.
+  const derived = useMemo(() => {
+    if (loaded) return null;
+    const match = templates.find((t) => sameSettings(t.settings, value));
+    return match ? { id: match.id, snapshot: JSON.stringify(match.settings) } : null;
+  }, [loaded, templates, value]);
+  const current = loaded ?? derived;
 
   const loadTemplates = useCallback(async () => {
     if (!showTemplates) return;
@@ -258,12 +293,26 @@ export function MapGenEditor({
   const seedRaw = getPath(value, ['seed']);
   const seed = typeof seedRaw === 'number' ? String(seedRaw) : '';
 
+  const copySeed = async (s: string) => {
+    try {
+      await navigator.clipboard.writeText(s);
+      toastSuccess('Copied seed to clipboard');
+    } catch (err) {
+      toastError((err as Error).message);
+    }
+  };
+
   const applyTemplate = async (id: string) => {
-    if (!id) return;
+    if (!id) {
+      setLoaded(null);
+      return;
+    }
     try {
       const t = await api.getMapGenTemplate(id);
       onChange(t.settings);
+      setLoaded({ id, snapshot: JSON.stringify(t.settings) });
     } catch (err) {
+      // Leave the picker showing whatever is really loaded, not the failed pick.
       toastError((err as Error).message);
     }
   };
@@ -276,6 +325,10 @@ export function MapGenEditor({
     );
     if (ok) await loadTemplates();
   };
+
+  // Settings have been edited since the template was loaded. Compared by value
+  // because every edit path rebuilds the object rather than mutating it.
+  const drifted = current !== null && !sameSettings(value, JSON.parse(current.snapshot));
 
   const controlSliders = (c: Ctrl) => (
     <Group key={c.key} title={c.label}>
@@ -307,11 +360,9 @@ export function MapGenEditor({
       {showTemplates && (
         <div className="row" style={{ marginBottom: 14, flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
           <select
-            defaultValue=""
-            onChange={(e) => {
-              void applyTemplate(e.target.value);
-              e.target.value = '';
-            }}
+            aria-label="World generation template"
+            value={current?.id ?? ''}
+            onChange={(e) => void applyTemplate(e.target.value)}
             style={{ maxWidth: 220 }}
           >
             <option value="">Load a template…</option>
@@ -321,6 +372,16 @@ export function MapGenEditor({
               </option>
             ))}
           </select>
+          {/* Re-selecting the same option fires no change event, so an explicit
+              reload is the only way back to the template once sliders have moved. */}
+          {current && drifted && (
+            <>
+              <span className="small muted">modified</span>
+              <button type="button" className="small ghost" onClick={() => void applyTemplate(current.id)}>
+                Reload
+              </button>
+            </>
+          )}
           <button type="button" className="small" onClick={() => void saveAsTemplate()}>
             Save as template
           </button>
@@ -380,15 +441,25 @@ export function MapGenEditor({
           Peaceful mode (enemies don't attack unless provoked)
         </label>
         <label style={{ marginTop: 14 }}>Map seed (blank = random)</label>
-        <input
-          type="number"
-          value={seed}
-          placeholder="random"
-          onChange={(e) => {
-            const val = e.target.value.trim();
-            onChange(setPath(value, ['seed'], val === '' ? null : Number(val)));
-          }}
-        />
+        <div className="row" style={{ gap: 8 }}>
+          <input
+            type="number"
+            value={seed}
+            placeholder="random"
+            onChange={(e) => {
+              const val = e.target.value.trim();
+              onChange(setPath(value, ['seed'], val === '' ? null : Number(val)));
+            }}
+          />
+          <button
+            type="button"
+            className="small"
+            disabled={!seed}
+            onClick={() => void copySeed(seed)}
+          >
+            Copy seed
+          </button>
+        </div>
       </Group>
     </div>
   );

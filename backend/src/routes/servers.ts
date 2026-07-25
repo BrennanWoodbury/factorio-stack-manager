@@ -224,13 +224,16 @@ export function serversRouter(ctx: AppContext): Router {
   );
 
   // Test & Create: stream a pre-flight boot probe (SSE), then — only if it passes —
-  // finalize the draft into a real server. Events: status | log | failed | done.
+  // finalize the draft into a real server. `create=0` runs the probe on its own and
+  // leaves the draft untouched, so the wizard can test without committing.
+  // Events: status | log | failed | passed (test-only) | done (created).
   r.get(
     '/draft/:id/test-create',
     asyncHandler(async (req, res) => {
       const id = req.params.id;
       const draft = manager.getDraft(id); // 404 unless a draft
-      const start = req.query.start === '1';
+      const createAfter = req.query.create !== '0';
+      const start = createAfter && req.query.start === '1';
       let mods: DraftState['mods'];
       try {
         if (draft.draft_state_json) mods = (JSON.parse(draft.draft_state_json) as DraftState).mods;
@@ -281,6 +284,11 @@ export function serversRouter(ctx: AppContext): Router {
         if (aborted) return;
         if (!result.ok) {
           send('failed', { errors: result.errors });
+          return;
+        }
+
+        if (!createAfter) {
+          send('passed', { message: 'Test passed — this configuration boots.' });
           return;
         }
 

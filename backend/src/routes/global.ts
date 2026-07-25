@@ -116,6 +116,23 @@ export function globalRouter(ctx: AppContext): Router {
     }),
   );
 
+  // Global settings such as server-settings.json defaults only take effect on a
+  // server's next (re)start, so the UI offers to restart running instances right
+  // after a save instead of silently waiting for their next natural restart.
+  r.get(
+    '/running-count',
+    asyncHandler(async (_req, res) => {
+      res.json({ count: await ctx.manager.runningCount() });
+    }),
+  );
+
+  r.post(
+    '/restart-running',
+    asyncHandler(async (_req, res) => {
+      res.json(await ctx.manager.restartRunning());
+    }),
+  );
+
   r.put(
     '/defaults',
     asyncHandler(async (req, res) => {

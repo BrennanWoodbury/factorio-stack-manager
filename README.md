@@ -192,6 +192,10 @@ It applies the `unraid` label automatically so reports remain searchable in this
   container and stream the result live (SSE). It reports the actual failure — bad mod, unloadable
   map-gen settings, wrong game version — instead of leaving you to read a crash loop afterwards.
   Anything it creates is discarded; only the generated map is kept.
+- **Test:** the same probe on its own. It reports pass or fail and stops there — nothing is
+  created — so a configuration can be tested, fixed and tested again before you commit to it. A
+  test doesn't need a name or subdomain yet, and editing anything that changes the world
+  (map-gen settings, game mode) discards the tested map so the next run really re-generates it.
 - **Load from save:** upload a `.zip` and the manager reads the save's own header (`level-init.dat`)
   directly — no container boot — to report the exact **Factorio version**, scenario and **full mod
   list with pinned versions**, shown as chips the moment the upload finishes. Bundled expansion mods
@@ -520,7 +524,7 @@ prune job) deletes the row and releases its ports.
 | GET/POST | `/servers/draft` | list in-progress drafts / start a new one |
 | GET/PATCH/DELETE | `/servers/draft/:id` | draft state (resume) / patch wizard state / abandon |
 | POST | `/servers/draft/:id/save` | upload a save; returns its version + mods from the header |
-| GET | `/servers/draft/:id/test-create` | **SSE** — boot once and stream the result (Test & Create) |
+| GET | `/servers/draft/:id/test-create` | **SSE** — boot once and stream the result (Test & Create; `create=0` tests only) |
 | POST | `/servers/draft/:id/finalize` | promote draft → active (allocates subdomain + SRV) |
 | GET/PATCH/DELETE | `/servers/:id` | detail / update / delete |
 | POST | `/servers/:id/{start,stop,restart}` | lifecycle |

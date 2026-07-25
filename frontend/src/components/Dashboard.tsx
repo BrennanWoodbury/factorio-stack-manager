@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import type { DraftDto, Server, ServerStatus, SystemStatus } from '../types';
+import type { DraftDto, PortCapacity, Server, ServerStatus, SystemStatus } from '../types';
 import { toastError } from '../ui';
 import { CreateServerForm } from './CreateServerForm';
 import { StatusBadge } from './StatusBadge';
@@ -180,6 +180,38 @@ export function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
+/**
+ * Ports unavailable out of the range. Counts what this manager allocated plus what
+ * other containers hold, because both are equally unusable — a range that looks
+ * empty while something else occupies it promises capacity that isn't there.
+ */
+function PortStat({ label, ports }: { label: string; ports: PortCapacity }) {
+  const unavailable = ports.used + ports.external;
+  return (
+    <div
+      className="stat"
+      title={
+        ports.external > 0
+          ? `${ports.used} allocated by this manager, ${ports.external} in use by other containers`
+          : undefined
+      }
+    >
+      <div className="n">
+        {unavailable}
+        <span className="muted" style={{ fontSize: 14 }}>
+          /{ports.total}
+        </span>
+      </div>
+      <div className="l">
+        {label}
+        {ports.external > 0 && (
+          <span className="muted"> · {ports.external} outside</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SystemPanel({ system }: { system: SystemStatus }) {
   return (
     <div className="panel">
@@ -190,19 +222,8 @@ function SystemPanel({ system }: { system: SystemStatus }) {
           </div>
           <div className="l">Docker</div>
         </div>
-        <div className="stat">
-          <div className="n">
-            {system.ports.game.used}
-            <span className="muted" style={{ fontSize: 14 }}>
-              /{system.ports.game.total}
-            </span>
-          </div>
-          <div className="l">Game ports used</div>
-        </div>
-        <div className="stat">
-          <div className="n">{system.ports.rcon.free}</div>
-          <div className="l">RCON ports free</div>
-        </div>
+        <PortStat label="Game ports used" ports={system.ports.game} />
+        <PortStat label="RCON ports used" ports={system.ports.rcon} />
         <div className="stat">
           <div className="n" style={{ color: system.dns.enabled ? 'var(--green)' : 'var(--muted)' }}>
             {system.dns.enabled ? 'ON' : 'OFF'}

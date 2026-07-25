@@ -400,6 +400,20 @@ export class ServerManager {
       : { source: 'generate' };
     const next: DraftState = { ...prev, ...patch };
 
+    // A passing probe pins the save it generated, so what gets created is exactly
+    // what was tested. Editing the world afterwards invalidates that save: drop it
+    // so the next test regenerates the map from the settings now on screen instead
+    // of silently re-testing (and creating) the old one. An uploaded save is the
+    // draft's whole point — never touch it.
+    if (next.source !== 'save' && row.generate_new_save === 0 && this.worldChanged(row, patch)) {
+      try {
+        if (row.save_name) serverFiles.deleteSave(id, row.save_name);
+      } catch (err) {
+        console.warn(`[draft ${id}] could not drop the tested save: ${(err as Error).message}`);
+      }
+      this.repo.update(id, { generate_new_save: 1 } as never);
+    }
+
     const cols: Record<string, string | number> = {};
     if (patch.name !== undefined) cols.name = patch.name.trim();
     if (patch.description !== undefined) cols.description = patch.description.trim();
@@ -420,6 +434,26 @@ export class ServerManager {
     }
     this.repo.setDraftState(id, JSON.stringify(next), this.draftExpiry());
     return this.repo.getById(id)!;
+  }
+
+  /**
+   * Does this patch describe a different world than the draft already holds? Only
+   * the inputs to map generation count — the wizard autosaves the whole form on
+   * every keystroke, so name/description edits must not invalidate a tested map.
+   */
+  private worldChanged(row: ServerRow, patch: Partial<DraftState>): boolean {
+    if (
+      patch.mapGen !== undefined &&
+      JSON.stringify(patch.mapGen) !== (row.map_gen_settings_json ?? 'null')
+    )
+      return true;
+    if (
+      patch.mapSettings !== undefined &&
+      (patch.mapSettings ? JSON.stringify(patch.mapSettings) : null) !== row.map_settings_json
+    )
+      return true;
+    // Game mode drives which bundled mods are on, and those generate the map.
+    return patch.gameMode !== undefined && cleanGameMode(patch.gameMode) !== row.game_mode;
   }
 
   /** Store an uploaded save into a Load-from-save draft and make it the boot target. */
@@ -792,6 +826,31 @@ export class ServerManager {
     return true;
   }
 
+  /** How many servers currently have a running container. */
+  async runningCount(): Promise<number> {
+    return (await this.docker.runningServerIds()).length;
+  }
+
+  /**
+   * Restart every currently-running server. Used when an admin explicitly opts in
+   * (after a global-settings save) to applying the change immediately, rather than
+   * waiting for each server's own next (re)start to pick it up.
+   */
+  async restartRunning(): Promise<{ restarted: string[]; failed: { id: string; error: string }[] }> {
+    const ids = await this.docker.runningServerIds();
+    const restarted: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+    for (const id of ids) {
+      try {
+        await this.restart(id);
+        restarted.push(id);
+      } catch (err) {
+        failed.push({ id, error: (err as Error).message });
+      }
+    }
+    return { restarted, failed };
+  }
+
   /**
    * The effective advanced server-settings (hard-coded ⊕ global defaults ⊕ this
    * server's sparse overrides), plus which keys are overridden and the global
@@ -974,6 +1033,17 @@ export class ServerManager {
     // Enforce the game mode's bundled-mod enablement in the mod list, preserving any
     // other mods. Modded leaves the mod list to the applied modpack.
     await this.applyGameModeMods(row);
+    // Fetch anything enabled but not on disk. A mod list is written before its
+    // downloads run, so a failure part-way leaves mods enabled with no zips —
+    // recoverable only by re-saving the list by hand. Healing here makes the
+    // download happen when it is actually needed.
+    const failed = await this.mods.downloadMissing(row);
+    if (failed.length > 0) {
+      throw new ValidationError(
+        `Could not download ${failed.length} mod(s) this server needs:\n` +
+          failed.map((f) => `  • ${f.name}: ${f.error}`).join('\n'),
+      );
+    }
     // Refuse a mod set the game will reject. Without this the container exits(1)
     // ~7ms in and `unless-stopped` restarts it forever, with the only explanation
     // buried in the container log — and on a server with no save yet the failure
