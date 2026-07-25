@@ -9,7 +9,7 @@ body:
       value: |
         Thanks for suggesting an improvement. Search existing issues first so related ideas and discussion can stay together.
 
-        If an existing feature is behaving incorrectly, use the [bug report form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=bug-report.yml) instead.
+        If an existing feature is behaving incorrectly, use the [bug report form](https://github.com/BrennanWoodbury/factorio-stack-manager/issues/new?template=bug-report.yml) instead.
 
   - type: dropdown
     id: area

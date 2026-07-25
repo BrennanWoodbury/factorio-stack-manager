@@ -12,7 +12,7 @@ routing is done entirely by DNS **SRV records**.
 
 Already running it? [UPGRADING.md](UPGRADING.md) covers which image tag to track, how to roll
 back, and what will and won't change under you. Published changes are listed in
-[GitHub Releases](https://github.com/BrennanWoodbury/factorio-tools-manager/releases), with
+[GitHub Releases](https://github.com/BrennanWoodbury/factorio-stack-manager/releases), with
 [CHANGELOG.md](CHANGELOG.md) retained for optional curated history.
 Project stewardship and review requirements are documented in [MAINTAINERS.md](MAINTAINERS.md).
 
@@ -107,7 +107,7 @@ Open `http://<host>:8080` and log in with `ADMIN_PASSWORD`.
 
 The published image is a **single container** — API and web UI in one — so it installs
 like any other Unraid app. A template lives at
-[`templates/factorio-tools-manager.xml`](templates/factorio-tools-manager.xml).
+[`templates/factorio-stack-manager.xml`](templates/factorio-stack-manager.xml).
 
 Until it's listed in Community Applications, install it by hand: **Docker → Add Container →
 Template → paste the raw template URL**, or drop the XML into
@@ -134,7 +134,7 @@ that's expected; manage them from this app. They also survive a manager update, 
 running if you remove the manager (`STOP_SERVERS_ON_SHUTDOWN` changes that).
 
 For Unraid-specific installation or runtime help, use the
-[Unraid support form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml).
+[Unraid support form](https://github.com/BrennanWoodbury/factorio-stack-manager/issues/new?template=unraid-support.yml).
 It applies the `unraid` label automatically so reports remain searchable in this repository.
 
 > **Data location.** Persistent data (SQLite DB + per-server saves/mods/config) is stored at
