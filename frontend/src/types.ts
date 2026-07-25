@@ -212,6 +212,22 @@ export interface DnsSettings {
   enabled: boolean;
 }
 
+export interface DnsReconcileRecordResult {
+  type: 'A' | 'SRV';
+  name: string;
+  serverId?: string;
+  ok: boolean;
+  action?: 'created' | 'updated';
+  error?: string;
+}
+
+export interface DnsReconcileResult {
+  ok: boolean;
+  lastRun: string;
+  publicIp?: string;
+  records: DnsReconcileRecordResult[];
+}
+
 export interface SystemStatus {
   /** Build identity of the running manager ("dev" for a local build). */
   version?: string;

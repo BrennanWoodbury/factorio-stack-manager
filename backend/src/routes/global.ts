@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { ValidationError } from '../lib/errors.js';
-import { dnsSettingsDto, getDnsSettings, setDnsSettings } from '../services/dnsSettings.js';
+import { dnsSettingsDto, getDnsSettings } from '../services/dnsSettings.js';
 import { factorioAccountDto, getFactorioAccount, setFactorioAccount } from '../services/factorioAccount.js';
 import {
   getGlobalDefaults,
@@ -28,7 +28,10 @@ export function globalRouter(ctx: AppContext): Router {
   r.get(
     '/dns',
     asyncHandler(async (_req, res) => {
-      res.json({ dns: dnsSettingsDto(getDnsSettings(ctx.db)) });
+      res.json({
+        dns: dnsSettingsDto(getDnsSettings(ctx.db)),
+        reconciliation: ctx.dns.reconciliationStatus(),
+      });
     }),
   );
 
@@ -47,10 +50,13 @@ export function globalRouter(ctx: AppContext): Router {
         }),
         req.body,
       );
-      setDnsSettings(ctx.db, body);
+      const activated = await ctx.dns.activateSettings(body);
       // Apply interval / enabled-state changes to the running DDNS job immediately.
       ctx.ddns.reschedule();
-      res.json({ dns: dnsSettingsDto(getDnsSettings(ctx.db)) });
+      res.json({
+        dns: dnsSettingsDto(activated.settings),
+        reconciliation: activated.reconciliation,
+      });
     }),
   );
 
@@ -68,6 +74,13 @@ export function globalRouter(ctx: AppContext): Router {
         req.body,
       );
       res.json(await ctx.dns.testConnection(candidate));
+    }),
+  );
+
+  r.post(
+    '/dns/reconcile',
+    asyncHandler(async (_req, res) => {
+      res.json({ reconciliation: await ctx.dns.reconcile() });
     }),
   );
 
