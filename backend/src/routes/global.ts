@@ -46,10 +46,12 @@ export function globalRouter(ctx: AppContext): Router {
           cloudflareToken: z.string().max(200).optional(),
           ddnsIntervalSeconds: z.number().int().min(30).max(86400).optional(),
           ipCheckUrl: z.string().url().max(300).optional(),
+          expectedRevision: z.number().int().nonnegative().optional(),
         }),
         req.body,
       );
-      const activated = await ctx.dns.activateSettings(body);
+      const { expectedRevision, ...patch } = body;
+      const activated = await ctx.dns.activateSettings(patch, expectedRevision);
       // Apply interval / enabled-state changes to the running DDNS job immediately.
       ctx.ddns.reschedule();
       res.json({

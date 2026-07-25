@@ -394,3 +394,78 @@ test('successful topology change swaps bookkeeping and removes old-zone records'
   assert.deepEqual(deleted.sort(), ['old-a', 'old-srv']);
   db.close();
 });
+
+test('concurrent admin saves cannot restore a stale DNS token', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  const service = new DnsService(db);
+  const initialRevision = service.settings().revision;
+  let releaseFirst!: () => void;
+  let markFirstStarted!: () => void;
+  const firstStarted = new Promise<void>((resolve) => {
+    markFirstStarted = resolve;
+  });
+  const firstGate = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const zoneAuthorizations: string[] = [];
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    const authorization = new Headers(init?.headers).get('Authorization') ?? '';
+    if (url.endsWith('/zones/zone-123')) {
+      zoneAuthorizations.push(authorization);
+      if (authorization === 'Bearer replacement-token') {
+        markFirstStarted();
+        await firstGate;
+      }
+      return cloudflareResult({ id: 'zone-123', name: 'example.com', status: 'active' });
+    }
+    if (url === 'https://ip.example.test') return new Response('203.0.113.42');
+    if (url.includes('/dns_records?')) {
+      return cloudflareResult([
+        {
+          id: 'existing-a',
+          type: 'A',
+          name: 'factorio-tools-manager.games.example.com',
+          content: '203.0.113.42',
+        },
+      ]);
+    }
+    if (method === 'PUT') return cloudflareResult({ id: 'existing-a' });
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const replaceToken = service.activateSettings(
+    { cloudflareToken: 'replacement-token' },
+    initialRevision,
+  );
+  await firstStarted;
+  const staleSave = service.activateSettings(
+    { ddnsIntervalSeconds: 600 },
+    initialRevision,
+  );
+
+  // The second request must wait outside the network/commit section. Once the
+  // first request commits, its stale expected revision is rejected.
+  await Promise.resolve();
+  assert.deepEqual(zoneAuthorizations, ['Bearer replacement-token']);
+  releaseFirst();
+  await replaceToken;
+  await assert.rejects(staleSave, /DNS settings changed in another session/);
+
+  assert.equal(getDnsSettings(db).cloudflareToken, 'replacement-token');
+  assert.equal(getDnsSettings(db).ddnsIntervalSeconds, 300);
+  assert.deepEqual(zoneAuthorizations, ['Bearer replacement-token']);
+
+  const refreshedRevision = getDnsSettings(db).revision;
+  await service.activateSettings({ ddnsIntervalSeconds: 600 }, refreshedRevision);
+  assert.equal(getDnsSettings(db).cloudflareToken, 'replacement-token');
+  assert.equal(getDnsSettings(db).ddnsIntervalSeconds, 600);
+  assert.deepEqual(zoneAuthorizations, [
+    'Bearer replacement-token',
+    'Bearer replacement-token',
+  ]);
+  db.close();
+});

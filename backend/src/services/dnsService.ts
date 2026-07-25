@@ -2,7 +2,7 @@ import type { DB } from '../db/index.js';
 import { kvGet, kvSet } from '../db/index.js';
 import type { DnsRecordRow, ServerRow } from '../db/models.js';
 import { CloudflareClient, type SrvData } from '../lib/cloudflare.js';
-import { CloudflareError } from '../lib/errors.js';
+import { CloudflareError, DnsSettingsConflictError } from '../lib/errors.js';
 import {
   dnsEnabled,
   deriveHostRecordName,
@@ -56,6 +56,7 @@ interface InternalReconcileResult {
  */
 export class DnsService {
   private lastReconciliation?: DnsReconcileResult;
+  private activationTail: Promise<void> = Promise.resolve();
 
   constructor(private readonly db: DB) {}
 
@@ -104,6 +105,7 @@ export class DnsService {
         ? current.baseDomain
         : candidate.baseDomain.trim().toLowerCase().replace(/\.$/, '');
     return {
+      revision: current.revision,
       baseDomain,
       hostRecordName: deriveHostRecordName(baseDomain),
       cloudflareZoneId:
@@ -467,11 +469,37 @@ export class DnsService {
     }
   }
 
-  /** Save and activate a candidate only after every desired DNS record succeeds. */
+  /**
+   * Save and activate a candidate only after every desired DNS record succeeds.
+   * Activations are serialized because Cloudflare validation/reconciliation yields
+   * while it performs network I/O. Without this gate, a later-finishing request can
+   * persist the settings snapshot it took before another admin's save completed.
+   */
   async activateSettings(
     patch: DnsSettingsPatch,
+    expectedRevision?: number,
+  ): Promise<{ settings: DnsSettings; reconciliation?: DnsReconcileResult }> {
+    const previous = this.activationTail;
+    let release!: () => void;
+    this.activationTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await this.activateSettingsExclusive(patch, expectedRevision);
+    } finally {
+      release();
+    }
+  }
+
+  private async activateSettingsExclusive(
+    patch: DnsSettingsPatch,
+    expectedRevision?: number,
   ): Promise<{ settings: DnsSettings; reconciliation?: DnsReconcileResult }> {
     const current = this.settings();
+    if (expectedRevision !== undefined && expectedRevision !== current.revision) {
+      throw new DnsSettingsConflictError();
+    }
     const candidate = this.candidateSettings(patch);
     if (!dnsEnabled(candidate)) {
       setDnsSettings(this.db, patch);
@@ -507,7 +535,7 @@ export class DnsService {
     }
 
     setDnsSettings(this.db, {
-      ...candidate,
+      ...patch,
       cloudflareZoneName: tested.zoneName ?? '',
     });
     this.commitBookkeeping(run);
