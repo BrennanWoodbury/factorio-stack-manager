@@ -86,7 +86,9 @@ nothing in `.env`. To get the values:
    Account ID. See [Cloudflare's current instructions](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
 
 The app creates DNS-only (unproxied) records — it never enables the orange-cloud proxy, which
-can't carry Factorio's UDP protocol.
+can't carry Factorio's UDP protocol. Enabling or changing DNS reconciles the shared A record and
+every active server's SRV record before the new settings become authoritative. Reconciliation also
+runs at startup, and **Sync DNS now** in the settings page reports each repaired record or error.
 
 ### 3. Configure and launch
 
