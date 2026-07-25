@@ -126,7 +126,7 @@ export function MapGenPanel({ server }: { server: Server }) {
         These apply to the <strong>next new map generated</strong> — a first start with no save, or a
         new save created from the Saves tab. They don't change an existing world. Current selected
         save: <span className="mono">{server.saveName}</span>. Manage reusable presets under{' '}
-        <strong>Templates</strong>.
+        <strong>World Generation</strong>.
         {mapSettings && (
           <>
             {' '}

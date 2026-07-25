@@ -146,7 +146,7 @@ export function DefaultsView() {
           ))}
         </select>
 
-        <label style={{ marginTop: 12 }}>Default map template</label>
+        <label style={{ marginTop: 12 }}>Default world generation template</label>
         <select
           value={d.mapTemplateId ?? ''}
           onChange={(e) => set('mapTemplateId', e.target.value || null)}
