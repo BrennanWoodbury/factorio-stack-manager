@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import type { ModEntry, Server } from '../types';
+import type { ModEntry, ModProblem, Server } from '../types';
 import { run, toastError, toastSuccess } from '../ui';
 import { ModSearchBox } from './ModSearchBox';
 import { ApplyModpack } from './ApplyModpack';
 
 export function ModsPanel({ server }: { server: Server }) {
   const [mods, setMods] = useState<ModEntry[]>([]);
+  const [problems, setProblems] = useState<ModProblem[]>([]);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -14,6 +15,7 @@ export function ModsPanel({ server }: { server: Server }) {
     try {
       const r = await api.getMods(server.id);
       setMods(r.mods);
+      setProblems((await api.getModProblems(server.id).catch(() => null))?.problems ?? []);
     } catch (err) {
       toastError((err as Error).message);
     }
@@ -33,6 +35,7 @@ export function ModsPanel({ server }: { server: Server }) {
     try {
       const r = await api.putMods(server.id, mods);
       setMods(r.mods);
+      setProblems(r.problems ?? []);
       if (r.errors.length > 0) {
         toastError(`Some mods failed: ${r.errors.map((e) => `${e.name} (${e.error})`).join('; ')}`);
       } else {
@@ -113,6 +116,30 @@ export function ModsPanel({ server }: { server: Server }) {
           </button>
         </div>
       </div>
+
+      {problems.length > 0 && (
+        <div
+          className="small"
+          style={{
+            marginBottom: 12,
+            padding: '10px 12px',
+            borderRadius: 6,
+            border: '1px solid var(--red)',
+            background: 'rgba(229,83,60,0.10)',
+          }}
+        >
+          <strong style={{ color: 'var(--red)' }}>
+            This mod set won&apos;t load — the server will refuse to start:
+          </strong>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+            {problems.map((p, i) => (
+              <li key={`${p.mod}-${i}`}>
+                <span className="mono">{p.mod}</span> — {p.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {!server.hasFactorioCredentials && (
         <div className="small muted" style={{ marginBottom: 10 }}>

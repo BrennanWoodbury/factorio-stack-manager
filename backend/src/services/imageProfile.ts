@@ -295,6 +295,10 @@ export class ImageProfileService {
    * ~600 MB download. Null when the image isn't local yet; the authoritative check
    * happens server-side at start/probe, where the image is present anyway.
    */
+  peekServer(server: ServerRow): Promise<ImageProfile | null> {
+    return this.peekImage(this.docker.imageFor(server));
+  }
+
   async peekImage(image: string): Promise<ImageProfile | null> {
     const identity = await this.docker.imageIdentity(image, { pullIfMissing: false });
     if (!identity) return null;

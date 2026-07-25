@@ -4,7 +4,7 @@ import { kvGet, kvSet, type DB } from '../db/index.js';
 import type { ServerRow, DraftState } from '../db/models.js';
 import { ServersRepo } from '../db/serversRepo.js';
 import { PortAllocator } from './portAllocator.js';
-import { DockerService } from './dockerService.js';
+import { DockerService, containerStatusLabel } from './dockerService.js';
 import { DnsService } from './dnsService.js';
 import { RconService } from './rconService.js';
 import { serverFiles, sanitizeName, type ModEntry } from './serverFiles.js';
@@ -16,6 +16,8 @@ import {
   gameModeIssue,
   type ImageProfile,
 } from './imageProfile.js';
+import { describeProblems, validateModSet, type ModProblem } from './modCompat.js';
+import type { ModService } from './modService.js';
 import {
   CASCADE,
   getGlobalDefaults,
@@ -99,8 +101,22 @@ export class ServerManager {
     private readonly dns: DnsService,
     private readonly rcon: RconService,
     private readonly config: AppConfig,
+    private readonly mods: ModService,
+    imageProfiles: ImageProfileService,
   ) {
-    this.imageProfiles = new ImageProfileService(docker);
+    this.imageProfiles = imageProfiles;
+  }
+
+  /**
+   * Everything about a server's mod set that would stop it booting.
+   *
+   * Kept separate from `start` so the mods UI can show the same list at the point
+   * the user is editing, rather than only when a start fails.
+   */
+  async modProblems(id: string): Promise<ModProblem[]> {
+    const row = this.get(id);
+    const profile = await this.imageProfiles.forServer(row);
+    return validateModSet(serverFiles.readModList(id), this.mods.installedMods(id), profile);
   }
 
   /**
@@ -926,6 +942,12 @@ export class ServerManager {
     // Enforce the game mode's bundled-mod enablement in the mod list, preserving any
     // other mods. Modded leaves the mod list to the applied modpack.
     await this.applyGameModeMods(row);
+    // Refuse a mod set the game will reject. Without this the container exits(1)
+    // ~7ms in and `unless-stopped` restarts it forever, with the only explanation
+    // buried in the container log — and on a server with no save yet the failure
+    // happens during `--create`, so no map is ever generated.
+    const problems = await this.modProblems(id);
+    if (problems.length > 0) throw new ValidationError(describeProblems(problems));
     // Custom map-gen settings (if any) written to config/ so the image's `--create`
     // (GENERATE_NEW_SAVE=true, or first start with no saves) honours them; also heals
     // any stale incomplete map-settings.json left by an earlier build.
@@ -1288,12 +1310,14 @@ export class ServerManager {
     status: string;
     running: boolean;
     startedAt?: string;
+    restartCount?: number;
     players?: { count: number; names: string[] };
     playersError?: string;
   }> {
     const row = this.get(id);
     const cs = await this.docker.status(id);
-    const status = cs.running ? 'running' : cs.exists ? 'stopped' : 'stopped';
+    // 'crashed' is what points at the container log, where the reason always is.
+    const status = containerStatusLabel(cs);
     if (this.repo.getById(id)!.status !== status) this.repo.setStatus(id, status);
 
     const result = {
@@ -1301,6 +1325,7 @@ export class ServerManager {
       status,
       running: cs.running,
       startedAt: cs.startedAt,
+      restartCount: cs.restartCount,
     } as Awaited<ReturnType<ServerManager['status']>>;
 
     if (cs.running) {

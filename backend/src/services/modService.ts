@@ -6,14 +6,37 @@ import type { DB } from '../db/index.js';
 import { AppError, ValidationError } from '../lib/errors.js';
 import { getFactorioAccount } from './factorioAccount.js';
 import { serverFiles, type ModEntry } from './serverFiles.js';
-import { KNOWN_BUNDLED_MODS, parseDependencies, type ModDependency } from './imageProfile.js';
+import {
+  KNOWN_BUNDLED_MODS,
+  parseDependencies,
+  type ImageProfileService,
+  type ModDependency,
+} from './imageProfile.js';
+import { gameSeries, installedFromInfo, type InstalledMod } from './modCompat.js';
 
 const MOD_PORTAL_BASE = 'https://mods.factorio.com';
+
+/**
+ * A mod zip's manifest, or undefined when it isn't one. Mod zips contain
+ * `<name>_<version>/info.json`, so the shallowest info.json is the mod's own —
+ * a mod that bundles another mod's zip must not be misread as that mod.
+ */
+function readModZipInfo(data: Buffer): InstalledMod | undefined {
+  const zip = new AdmZip(data);
+  const infoEntry = zip
+    .getEntries()
+    .filter((e) => e.entryName.endsWith('/info.json') || e.entryName === 'info.json')
+    .sort((a, b) => a.entryName.split('/').length - b.entryName.split('/').length)[0];
+  if (!infoEntry) throw new Error('no info.json inside zip');
+  return installedFromInfo(JSON.parse(infoEntry.getData().toString('utf8')));
+}
 
 interface ModRelease {
   version: string;
   download_url: string;
   file_name: string;
+  /** `factorio_version` is the game series the release was built for, e.g. "2.0". */
+  info_json?: { factorio_version?: string };
 }
 interface ModInfoResponse {
   name: string;
@@ -124,8 +147,32 @@ const BUNDLED_MODS = KNOWN_BUNDLED_MODS;
  * of scope for the MVP — enabling a mod downloads that mod's latest release only.
  */
 export class ModService {
-  /** Needs the DB to read the single global Factorio.com account for downloads. */
-  constructor(private readonly db: DB) {}
+  /**
+   * The DB supplies the single global Factorio.com account used for downloads.
+   *
+   * `imageProfiles` is what makes downloads game-version aware. It is optional so
+   * unit tests can construct a portal-only service; when absent, or when the
+   * server's image isn't pulled yet, release selection falls back to "newest" and
+   * the pre-start check in modCompat is what catches an unloadable mod.
+   */
+  constructor(
+    private readonly db: DB,
+    private readonly imageProfiles?: ImageProfileService,
+  ) {}
+
+  /**
+   * The Factorio series a server runs ("2.0"), or undefined when it can't be known
+   * without pulling a ~600 MB image — never worth blocking a mod download on.
+   */
+  private async seriesFor(server: ServerRow): Promise<string | undefined> {
+    if (!this.imageProfiles) return undefined;
+    try {
+      const profile = await this.imageProfiles.peekServer(server);
+      return profile ? gameSeries(profile.gameVersion) || undefined : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   // Cached full mod catalog. The portal has no keyword-search endpoint, so we
   // fetch the whole listing (~13MB, one request) and filter/rank in-memory,
@@ -375,18 +422,50 @@ export class ModService {
     return releases;
   }
 
-  /** Look up a mod's latest release on the portal. */
-  async latestRelease(name: string): Promise<ModRelease> {
+  /**
+   * A mod's newest release, restricted to ones built for `gameSeries` ("2.0") when
+   * given.
+   *
+   * "Newest" alone is wrong far more often than it looks: of the 22k mods on the
+   * portal, only ~3k have a 2.1 latest release, and 17 of the 100 most-downloaded
+   * mods have a latest release that isn't 2.1. Installing one of those produces a
+   * container that exits(1) on startup and restarts forever, so refusing here with
+   * a message naming the version is strictly better than letting it through.
+   */
+  async latestRelease(name: string, gameSeries?: string): Promise<ModRelease> {
     const releases = await this.releases(name);
-    return releases[releases.length - 1];
+    if (!gameSeries) return releases[releases.length - 1];
+    const compatible = releases.filter(
+      // A release with no declared version is taken as usable rather than skipped.
+      (r) => !r.info_json?.factorio_version || r.info_json.factorio_version === gameSeries,
+    );
+    if (compatible.length === 0) {
+      const latest = releases[releases.length - 1];
+      throw new ValidationError(
+        `Mod "${name}" has no release for Factorio ${gameSeries} ` +
+          `(newest is ${latest.version} for ${latest.info_json?.factorio_version ?? 'an unknown version'}).`,
+      );
+    }
+    return compatible[compatible.length - 1];
   }
 
-  /** Look up a specific pinned version, or the latest if `version` is undefined. */
-  async getRelease(name: string, version?: string): Promise<ModRelease> {
-    if (!version) return this.latestRelease(name);
+  /**
+   * A specific pinned version, or the newest compatible one when unpinned. A pin
+   * that names a release built for another Factorio series is refused rather than
+   * honoured — the pin cannot be satisfied on this server whatever we download.
+   */
+  async getRelease(name: string, version?: string, gameSeries?: string): Promise<ModRelease> {
+    if (!version) return this.latestRelease(name, gameSeries);
     const releases = await this.releases(name);
     const match = releases.find((r) => r.version === version);
     if (!match) throw new ValidationError(`Mod "${name}" has no release ${version}`);
+    const declared = match.info_json?.factorio_version;
+    if (gameSeries && declared && declared !== gameSeries) {
+      throw new ValidationError(
+        `Mod "${name}" is pinned to ${version}, which is built for Factorio ${declared}, ` +
+          `not ${gameSeries}.`,
+      );
+    }
     return match;
   }
 
@@ -401,7 +480,7 @@ export class ModService {
         'A Factorio.com account is required to download mods; set it in global settings',
       );
     }
-    const release = await this.getRelease(name, version);
+    const release = await this.getRelease(name, version, await this.seriesFor(server));
     const url =
       `${MOD_PORTAL_BASE}${release.download_url}` +
       `?username=${encodeURIComponent(account.username)}` +
@@ -453,6 +532,28 @@ export class ModService {
     return { downloaded, errors };
   }
 
+  /**
+   * Manifests of every mod zip in a server's mods dir. Unreadable zips are skipped
+   * rather than thrown on: a corrupt file shows up as its mod being "not
+   * downloaded", which is both true and actionable, instead of failing the whole
+   * pre-start check.
+   */
+  installedMods(serverId: string): InstalledMod[] {
+    const dir = serverFiles.modsDir(serverId);
+    if (!fs.existsSync(dir)) return [];
+    const out: InstalledMod[] = [];
+    for (const file of fs.readdirSync(dir)) {
+      if (!file.endsWith('.zip')) continue;
+      try {
+        const info = readModZipInfo(fs.readFileSync(path.join(dir, file)));
+        if (info) out.push(info);
+      } catch {
+        /* not a readable mod zip — treated as absent */
+      }
+    }
+    return out;
+  }
+
   getModList(serverId: string): ModEntry[] {
     return serverFiles.readModList(serverId);
   }
@@ -467,18 +568,8 @@ export class ModService {
     let name: string;
     let version: string;
     try {
-      const zip = new AdmZip(data);
-      // Mod zips contain `<name>_<version>/info.json`; pick the shallowest info.json.
-      const infoEntry = zip
-        .getEntries()
-        .filter((e) => e.entryName.endsWith('/info.json') || e.entryName === 'info.json')
-        .sort((a, b) => a.entryName.split('/').length - b.entryName.split('/').length)[0];
-      if (!infoEntry) throw new Error('no info.json inside zip');
-      const info = JSON.parse(infoEntry.getData().toString('utf8')) as {
-        name?: string;
-        version?: string;
-      };
-      if (!info.name || !info.version) throw new Error('info.json missing name/version');
+      const info = readModZipInfo(data);
+      if (!info) throw new Error('info.json missing name/version');
       name = info.name;
       version = info.version;
     } catch (err) {

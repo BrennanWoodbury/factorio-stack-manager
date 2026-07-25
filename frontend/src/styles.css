@@ -83,6 +83,7 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px
 }
 .badge.running { background: rgba(70,194,106,0.15); color: var(--green); }
 .badge.stopped { background: rgba(154,164,178,0.15); color: var(--muted); }
+.badge.crashed { background: rgba(229,83,60,0.15); color: var(--red); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 
 .server-card {

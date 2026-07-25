@@ -96,6 +96,7 @@ export function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
 
       {servers.map((s) => {
         const st = statuses[s.id];
+        const status = st?.status ?? s.status;
         const running = st?.running ?? s.status === 'running';
         return (
           <div key={s.id} className="server-card" onClick={() => onOpen(s.id)}>
@@ -114,7 +115,7 @@ export function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
                   {s.maxPlayers > 0 ? ` / ${s.maxPlayers}` : ''}
                 </span>
               )}
-              <StatusBadge running={running} />
+              <StatusBadge status={status} />
               <LifecycleControls id={s.id} running={running} onChanged={refresh} small />
             </div>
           </div>

@@ -130,9 +130,12 @@ export interface BackupInfo {
 
 export interface ServerStatus {
   id: string;
+  /** 'running' | 'stopped' | 'crashed' — 'crashed' means it keeps exiting and restarting. */
   status: string;
   running: boolean;
   startedAt?: string;
+  /** Times Docker has restarted the container; non-zero means it has died. */
+  restartCount?: number;
   players?: { count: number; names: string[] };
   playersError?: string;
 }
@@ -161,6 +164,18 @@ export interface ModEntry {
   name: string;
   enabled: boolean;
   version?: string;
+}
+
+/** Something about a server's mod set that would stop the game loading it. */
+export interface ModProblem {
+  kind:
+    | 'not-installed'
+    | 'game-version'
+    | 'missing-dependency'
+    | 'disabled-dependency'
+    | 'conflict';
+  mod: string;
+  detail: string;
 }
 
 export interface CatalogEntry {
