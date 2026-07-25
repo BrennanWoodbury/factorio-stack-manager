@@ -100,6 +100,13 @@ if (templateXml) {
     fail(`${TEMPLATE}: <Repository> should track ":latest", got "${repository}"`);
   }
 
+  // The manager controls sibling containers through the host Docker daemon and
+  // its Unraid deployment requires privileged mode. Keep that security-sensitive
+  // requirement explicit rather than relying on a manual install-time toggle.
+  if (one('Privileged') !== 'true') {
+    fail(`${TEMPLATE}: <Privileged> must be true for sibling-container management`);
+  }
+
   if (!/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(one('Date'))) {
     fail(`${TEMPLATE}: <Date> must be YYYY-MM-DD, got "${one('Date')}"`);
   }

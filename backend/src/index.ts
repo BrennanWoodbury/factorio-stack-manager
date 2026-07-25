@@ -95,7 +95,15 @@ async function main() {
   }
   console.log(`[startup] Factorio containers bind-mount from ${getHostServersDir()}`);
 
-  ctx.ddns.start();
+  if (ctx.dns.enabled) {
+    void ctx.dns
+      .reconcile()
+      .then((result) => {
+        if (!result.ok) console.warn('[startup] DNS reconciliation completed with errors');
+      })
+      .catch((err) => console.warn(`[startup] DNS reconciliation failed: ${(err as Error).message}`))
+      .finally(() => ctx.ddns.start());
+  } else ctx.ddns.start();
   ctx.backups.start();
   ctx.draftPrune.start();
 

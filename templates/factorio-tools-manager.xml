@@ -5,7 +5,7 @@
   <Registry>https://hub.docker.com/r/brennanwoodbury/factorio-manager</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
-  <Privileged>false</Privileged>
+  <Privileged>true</Privileged>
 
   <Icon>https://raw.githubusercontent.com/BrennanWoodbury/factorio-tools-manager/main/icon.png</Icon>
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
@@ -44,6 +44,10 @@ creates is reachable.[/li]
 
 [b]Notes[/b]
 [ul]
+[li]The manager runs in privileged mode and controls the host Docker daemon through
+the Docker socket. This is required to create and manage sibling Factorio
+containers. Treat access to its web UI as equivalent to host administrator access,
+and do not expose it directly to the internet.[/li]
 [li]Game ports are published by the individual server containers, not by this one,
 so there are no game ports to map here.[/li]
 [li]The Factorio servers it creates appear in the Docker tab without their own
@@ -55,9 +59,10 @@ never downloaded.[/li]
   </Overview>
 
   <Requires>
-A contiguous UDP port range forwarded on your router (default 34197-34297), and
-access to the Docker socket so the manager can create the server containers.
-Cloudflare DNS is optional and configured inside the app.
+A contiguous UDP port range forwarded on your router (default 34197-34297),
+privileged mode, and access to the Docker socket so the manager can create and
+manage sibling server containers. Cloudflare DNS is optional and configured
+inside the app.
   </Requires>
 
   <Changes>Release history: https://github.com/BrennanWoodbury/factorio-tools-manager/releases</Changes>
@@ -78,7 +83,7 @@ Cloudflare DNS is optional and configured inside the app.
 
   <!-- Required to create and control the per-server containers. -->
   <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw"
-          Description="Required. The manager creates each Factorio server as a sibling container through this socket. Treat access to the web UI as equivalent to host access."
+          Description="Required with privileged mode. The manager creates each Factorio server as a sibling container through this socket. Treat access to the web UI as equivalent to host administrator access."
           Type="Path" Display="always" Required="true" Mask="false">/var/run/docker.sock</Config>
 
   <Config Name="Admin Password" Target="ADMIN_PASSWORD" Default="" Mode=""

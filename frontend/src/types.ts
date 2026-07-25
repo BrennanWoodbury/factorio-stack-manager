@@ -203,13 +203,31 @@ export interface ApplyResult {
 }
 
 export interface DnsSettings {
+  revision: number;
   baseDomain: string;
   hostRecordName: string;
   cloudflareZoneId: string;
+  cloudflareZoneName: string;
   hasToken: boolean;
   ddnsIntervalSeconds: number;
   ipCheckUrl: string;
   enabled: boolean;
+}
+
+export interface DnsReconcileRecordResult {
+  type: 'A' | 'SRV';
+  name: string;
+  serverId?: string;
+  ok: boolean;
+  action?: 'created' | 'updated';
+  error?: string;
+}
+
+export interface DnsReconcileResult {
+  ok: boolean;
+  lastRun: string;
+  publicIp?: string;
+  records: DnsReconcileRecordResult[];
 }
 
 export interface SystemStatus {

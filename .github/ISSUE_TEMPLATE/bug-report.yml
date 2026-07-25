@@ -1,0 +1,118 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Factorio Tools Manager
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Search existing issues first, and never include passwords, API tokens, session secrets, or other credentials.
+
+        For installation, container-host, permissions, networking, or other Unraid-specific problems, use the [Unraid support form](https://github.com/BrennanWoodbury/factorio-tools-manager/issues/new?template=unraid-support.yml) instead.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Dashboard or user interface
+        - Server creation or import
+        - Server start, stop, restart, or status
+        - Saves or backups
+        - Mods or Factorio authentication
+        - Server configuration
+        - Cloudflare DNS or DDNS
+        - API or automation
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Manager version or image tag
+      description: The dashboard shows the running version. If unavailable, provide the container image tag.
+      placeholder: "For example: 1.2.3, latest, or edge"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Unraid Community Applications
+        - Docker Compose
+        - Docker CLI or another container manager
+        - Local development environment
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: factorio-version
+    attributes:
+      label: Factorio version or image tag
+      description: Provide this when the problem affects a managed Factorio server.
+      placeholder: "For example: 2.0.66 or stable"
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include any visible error message.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Change ...
+        3. Click ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Reproduction frequency
+      options:
+        - Every time
+        - Most of the time
+        - Sometimes
+        - Happened once
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste the smallest manager or Factorio-container log excerpt that shows the problem. Remove credentials and public IP addresses if desired.
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recordings
+      description: Drag and drop any images or recordings that help explain the problem.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I searched existing issues and removed passwords, API tokens, session secrets, and other credentials from this report.
+          required: true

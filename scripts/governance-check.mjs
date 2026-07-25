@@ -102,6 +102,21 @@ export function currentApprovers({ reviews, trustedMaintainers, author, headSha 
     .sort();
 }
 
+/** Allow an explicit post-merge release bypass only for a CODEOWNER or repository admin. */
+export function authorizedReleaseBypass({ actor, trustedMaintainers, repositoryPermission }) {
+  if (!actor) return { authorized: false };
+  const login = canonical(actor);
+  if (trustedMaintainers.has(login)) {
+    // Governance validation keeps the active maintainer roster synchronized with every
+    // CODEOWNERS rule, so an active maintainer is a CODEOWNER for all repository paths.
+    return { authorized: true, reason: 'CODEOWNER' };
+  }
+  if (repositoryPermission?.toLowerCase() === 'admin') {
+    return { authorized: true, reason: 'repository admin' };
+  }
+  return { authorized: false };
+}
+
 export function evaluateGovernance({
   changedFiles,
   trustedMaintainers,
