@@ -64,8 +64,16 @@ export class MapGenTemplateService {
     }
   }
 
-  list(): MapGenTemplateDto[] {
-    return this.repo.list().map((r) => this.toDto(r));
+  /**
+   * Templates with their settings.
+   *
+   * The settings are included so a client holding a settings object can tell which
+   * template it came from: the editor is handed raw settings (from a draft being
+   * resumed, or the global default template applied at creation) with no record of
+   * their origin, and would otherwise have to claim it knows nothing.
+   */
+  list(): MapGenTemplateDetail[] {
+    return this.repo.list().map((r) => ({ ...this.toDto(r), settings: this.parseSettings(r) }));
   }
 
   get(id: string): MapGenTemplateDetail {
