@@ -301,8 +301,12 @@ export const api = {
   // dns / cloudflare
   getDns: () => req<{ dns: DnsSettings }>('GET', '/global/dns'),
   setDns: (patch: Record<string, unknown>) => req<{ dns: DnsSettings }>('PUT', '/global/dns', patch),
-  testDns: () =>
-    req<{ ok: boolean; zoneName?: string; error?: string }>('POST', '/global/dns/test'),
+  testDns: (candidate: Record<string, unknown>) =>
+    req<{ ok: boolean; zoneName?: string; publicIp?: string; error?: string }>(
+      'POST',
+      '/global/dns/test',
+      candidate,
+    ),
 
   // rcon
   rcon: (id: string, command: string) =>

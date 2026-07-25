@@ -56,8 +56,18 @@ export function globalRouter(ctx: AppContext): Router {
 
   r.post(
     '/dns/test',
-    asyncHandler(async (_req, res) => {
-      res.json(await ctx.dns.testConnection());
+    asyncHandler(async (req, res) => {
+      const candidate = parse(
+        z.object({
+          baseDomain: z.string().max(253).optional(),
+          hostRecordName: z.string().max(253).optional(),
+          cloudflareZoneId: z.string().max(64).optional(),
+          cloudflareToken: z.string().max(200).optional(),
+          ipCheckUrl: z.string().url().max(300).optional(),
+        }),
+        req.body,
+      );
+      res.json(await ctx.dns.testConnection(candidate));
     }),
   );
 
