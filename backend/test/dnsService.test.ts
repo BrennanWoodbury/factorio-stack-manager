@@ -469,3 +469,150 @@ test('concurrent admin saves cannot restore a stale DNS token', async () => {
   ]);
   db.close();
 });
+
+/** The row as the manager would hand it to DnsService. */
+function serverRow(db: ReturnType<typeof openDb>, id: string) {
+  return db.prepare('SELECT * FROM servers WHERE id = ?').get(id) as Parameters<
+    DnsService['createServerSrv']
+  >[0];
+}
+
+/** Records every Cloudflare write so the request body itself can be asserted. */
+function captureCloudflare(): { writes: { method: string; url: string; body: any }[] } {
+  const writes: { method: string; url: string; body: any }[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      writes.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      return cloudflareResult({ id: 'record-1', type: 'SRV', name: 'x', content: 'y' });
+    }
+    if (url.includes('/dns_records?')) return cloudflareResult([]);
+    if (url.endsWith('/zones/zone-123')) {
+      return cloudflareResult({ id: 'zone-123', name: 'example.com', status: 'active' });
+    }
+    if (url === 'https://ip.example.test') return new Response('203.0.113.42');
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  return { writes };
+}
+
+test('an SRV record is created with the full record name Cloudflare requires', async () => {
+  // Cloudflare used to derive the name from data.service/proto/name and now
+  // requires the top-level field, rejecting a request without one as
+  // "9000: DNS name is invalid" — which is what a server create hit.
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'srv1', 'factory', 34197);
+  const { writes } = captureCloudflare();
+
+  await new DnsService(db).createServerSrv(serverRow(db, 'srv1'));
+
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].method, 'POST');
+  assert.equal(writes[0].body.type, 'SRV');
+  assert.equal(writes[0].body.name, '_factorio._udp.factory.games.example.com');
+  assert.deepEqual(writes[0].body.data.name, 'factory.games.example.com');
+  assert.equal(writes[0].body.data.port, 34197);
+});
+
+test('a server opted out of DNS gets no Cloudflare record at all', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'srv1', 'private', 34197);
+  db.prepare('UPDATE servers SET dns_enabled = 0 WHERE id = ?').run('srv1');
+  const { writes } = captureCloudflare();
+
+  await new DnsService(db).createServerSrv(serverRow(db, 'srv1'));
+
+  assert.deepEqual(writes, [], 'nothing is sent to Cloudflare');
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM dns_records WHERE server_id = 'srv1'").get<{ n: number }>()
+      ?.n,
+    0,
+  );
+});
+
+test('opting a server out afterwards removes the record it already had', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'srv1', 'factory', 34197);
+  const dns = new DnsService(db);
+  captureCloudflare();
+  await dns.createServerSrv(serverRow(db, 'srv1'));
+
+  db.prepare('UPDATE servers SET dns_enabled = 0 WHERE id = ?').run('srv1');
+  const { writes } = captureCloudflare();
+  await dns.updateServerSrv(serverRow(db, 'srv1'));
+
+  assert.deepEqual(
+    writes.map((w) => w.method),
+    ['DELETE'],
+    'the existing record is deleted, not updated',
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM dns_records WHERE server_id = 'srv1'").get<{ n: number }>()
+      ?.n,
+    0,
+  );
+});
+
+test('other servers keep their records when one opts out', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'keep', 'public', 34197);
+  insertServer(db, 'drop', 'private', 34198);
+  db.prepare('UPDATE servers SET dns_enabled = 0 WHERE id = ?').run('drop');
+  const dns = new DnsService(db);
+  const { writes } = captureCloudflare();
+
+  await dns.createServerSrv(serverRow(db, 'keep'));
+  await dns.createServerSrv(serverRow(db, 'drop'));
+
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].body.name, '_factorio._udp.public.games.example.com');
+});
+
+test('switching DNS off stops all automation but keeps the settings', async () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'srv1', 'factory', 34197);
+  setDnsSettings(db, { enabled: false });
+  const { writes } = captureCloudflare();
+
+  await new DnsService(db).createServerSrv(serverRow(db, 'srv1'));
+  assert.deepEqual(writes, []);
+
+  const s = getDnsSettings(db);
+  assert.equal(s.enabled, false);
+  assert.equal(s.cloudflareToken, 'token-123', 'the token is still there to switch back on with');
+  assert.equal(s.cloudflareZoneId, 'zone-123');
+  assert.equal(s.baseDomain, 'games.example.com');
+
+  setDnsSettings(db, { enabled: true });
+  await new DnsService(db).createServerSrv(serverRow(db, 'srv1'));
+  assert.equal(writes.length, 1, 'switching back on resumes without retyping anything');
+});
+
+test('DNS defaults to on for installations that predate the switch', () => {
+  const db = openDb(':memory:');
+  configureDns(db);
+  assert.equal(kvGet(db, 'dns_enabled'), undefined, 'nothing stored');
+  assert.equal(getDnsSettings(db).enabled, true);
+});
+
+test('reconciliation sends the record name on every SRV write too', async () => {
+  // A separate call site from createServerSrv, and the one a manual "Sync DNS now"
+  // uses — it needs the same top-level name or every record fails with 9000.
+  const db = openDb(':memory:');
+  configureDns(db);
+  insertServer(db, 'srv1', 'factory', 34197);
+  const { writes } = captureCloudflare();
+
+  const run = await new DnsService(db).reconcile();
+
+  assert.equal(run.ok, true);
+  const srvWrites = writes.filter((w) => w.body?.type === 'SRV');
+  assert.equal(srvWrites.length, 1);
+  assert.equal(srvWrites[0].body.name, '_factorio._udp.factory.games.example.com');
+});

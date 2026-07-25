@@ -85,19 +85,31 @@ export class CloudflareClient {
     );
   }
 
-  async createSrv(data: SrvData, ttl = 60): Promise<CloudflareRecord> {
+  /**
+   * `name` is the full record name (`_factorio._udp.<sub>.<base>`) and must be sent
+   * even though `data` already carries service/proto/name. Cloudflare used to
+   * derive it from those; it now requires the top-level field and rejects a
+   * request without one as `9000: DNS name is invalid`.
+   */
+  async createSrv(name: string, data: SrvData, ttl = 60): Promise<CloudflareRecord> {
     return this.call<CloudflareRecord>('POST', `/zones/${this.zoneId}/dns_records`, {
       type: 'SRV',
+      name,
       ttl,
       data,
     });
   }
 
-  async updateSrv(recordId: string, data: SrvData, ttl = 60): Promise<CloudflareRecord> {
+  async updateSrv(
+    recordId: string,
+    name: string,
+    data: SrvData,
+    ttl = 60,
+  ): Promise<CloudflareRecord> {
     return this.call<CloudflareRecord>(
       'PUT',
       `/zones/${this.zoneId}/dns_records/${recordId}`,
-      { type: 'SRV', ttl, data },
+      { type: 'SRV', name, ttl, data },
     );
   }
 
