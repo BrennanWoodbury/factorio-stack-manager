@@ -1,4 +1,7 @@
 import type { DnsService } from '../services/dnsService.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('ddns');
 
 /**
  * Dynamic-DNS job. On an interval it asks an external "what's my IP" service for
@@ -39,16 +42,16 @@ export class DdnsJob {
       const changed = await this.dns.ensureHostARecord(ip);
       this.lastIp = ip;
       this.lastError = undefined;
-      if (changed) console.log(`[ddns] updated host A record → ${ip}`);
+      if (changed) log.info(`updated host A record → ${ip}`);
     } catch (err) {
       this.lastError = (err as Error).message;
-      console.warn(`[ddns] check failed: ${this.lastError}`);
+      log.warn(`check failed: ${this.lastError}`);
     }
   }
 
   start(): void {
     if (!this.dns.enabled) {
-      console.log('[ddns] DNS not configured — DDNS job idle');
+      log.info('DNS not configured — DDNS job idle');
       return;
     }
     if (this.running) return;
@@ -57,7 +60,7 @@ export class DdnsJob {
     // Fire once shortly after start, then on the configured interval.
     void this.runOnce();
     this.timer = setInterval(() => void this.runOnce(), intervalMs);
-    console.log(`[ddns] started (every ${this.dns.settings().ddnsIntervalSeconds}s)`);
+    log.info(`started (every ${this.dns.settings().ddnsIntervalSeconds}s)`);
   }
 
   stop(): void {

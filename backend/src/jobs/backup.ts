@@ -1,4 +1,7 @@
 import type { ServerManager } from '../services/serverManager.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('backup');
 
 /**
  * Scheduled-backup job. Wakes up on a fixed tick and asks the manager to back up
@@ -16,9 +19,9 @@ export class BackupJob {
     this.timer = setInterval(() => {
       void this.manager
         .runDueBackups()
-        .catch((err) => console.warn(`[backup] tick failed: ${(err as Error).message}`));
+        .catch((err) => log.warn(`tick failed: ${(err as Error).message}`));
     }, this.tickMs);
-    console.log('[backup] scheduler started');
+    log.info('scheduler started');
   }
 
   stop(): void {

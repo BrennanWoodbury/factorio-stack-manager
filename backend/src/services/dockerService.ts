@@ -8,6 +8,9 @@ import type { AppConfig } from '../config.js';
 import type { ServerRow } from '../db/models.js';
 import type { FactorioAccount } from './factorioAccount.js';
 import { DockerError } from '../lib/errors.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('docker');
 
 /**
  * Internal (container-side) RCON port. RCON is never forwarded externally, so its
@@ -125,15 +128,13 @@ export class DockerService {
    */
   async ensureImage(image: string): Promise<void> {
     try {
-      console.log(`[docker] pulling ${image} (checking for updates) …`);
+      log.info(`pulling ${image} (checking for updates) …`);
       await this.pullImage(image);
-      console.log(`[docker] ${image} up to date`);
+      log.info(`${image} up to date`);
     } catch (pullErr) {
       try {
         await this.docker.getImage(image).inspect();
-        console.warn(
-          `[docker] pull ${image} failed (${(pullErr as Error).message}); using local copy`,
-        );
+        log.warn(`pull ${image} failed (${(pullErr as Error).message}); using local copy`);
       } catch {
         throw pullErr instanceof DockerError
           ? pullErr
@@ -172,7 +173,7 @@ export class DockerService {
         } catch (err) {
           const code = (err as { statusCode?: number }).statusCode;
           if (code !== 304 && code !== 404) {
-            console.warn(`[docker] stop ${c.Names?.[0] ?? c.Id} failed: ${(err as Error).message}`);
+            log.warn(`stop ${c.Names?.[0] ?? c.Id} failed: ${(err as Error).message}`);
           }
         }
       }),
@@ -224,7 +225,7 @@ export class DockerService {
     } catch (err) {
       // Never block an allocation on this: it is an optimisation over the
       // authoritative check, which is the bind itself.
-      console.warn(`[docker] could not list published ports: ${(err as Error).message}`);
+      log.warn(`could not list published ports: ${(err as Error).message}`);
     }
     return ports;
   }
@@ -244,7 +245,7 @@ export class DockerService {
       const networks = await this.docker.listNetworks({ filters: { name: [name] } });
       if (networks.some((n) => n.Name === name)) return;
       await this.docker.createNetwork({ Name: name, Driver: 'bridge', CheckDuplicate: true });
-      console.log(`[docker] created network ${name}`);
+      log.info(`created network ${name}`);
     } catch (err) {
       throw new DockerError(`ensureNetwork failed: ${(err as Error).message}`);
     }
@@ -304,11 +305,11 @@ export class DockerService {
       const net = await this.docker.getNetwork(name).inspect();
       if (Object.keys(net.Containers ?? {}).some((c) => c === id)) return; // already attached
       await this.docker.getNetwork(name).connect({ Container: id });
-      console.log(`[docker] attached manager to ${name} for RCON`);
+      log.info(`attached manager to ${name} for RCON`);
     } catch (err) {
       const msg = (err as Error).message;
       if (/already exists|already attached|endpoint with name/i.test(msg)) return;
-      console.warn(`[docker] could not attach the manager to ${name}: ${msg} — RCON may fail`);
+      log.warn(`could not attach the manager to ${name}: ${msg} — RCON may fail`);
     }
   }
 

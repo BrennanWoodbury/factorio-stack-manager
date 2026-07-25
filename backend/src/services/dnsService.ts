@@ -3,6 +3,9 @@ import { kvGet, kvSet } from '../db/index.js';
 import type { DnsRecordRow, ServerRow } from '../db/models.js';
 import { CloudflareClient, type SrvData } from '../lib/cloudflare.js';
 import { CloudflareError, DnsSettingsConflictError } from '../lib/errors.js';
+import { getLogger } from '../lib/logger.js';
+
+const log = getLogger('dns');
 import {
   dnsEnabled,
   serverDnsEnabled,
@@ -215,7 +218,7 @@ export class DnsService {
         try {
           await cf.deleteRecord(row.cloudflare_record_id);
         } catch (err) {
-          console.warn(`[dns] failed to delete SRV ${row.name}: ${(err as Error).message}`);
+          log.warn(`failed to delete SRV ${row.name}: ${(err as Error).message}`);
         }
       }
       this.db.prepare('DELETE FROM dns_records WHERE id = ?').run(row.id);
@@ -303,9 +306,7 @@ export class DnsService {
         newARecordId = created.id;
       }
     } catch (err) {
-      console.warn(
-        `[dns] host-label migration deferred, will retry next start: ${(err as Error).message}`,
-      );
+      log.warn(`host-label migration deferred, will retry next start: ${(err as Error).message}`);
       return; // marker stays unset
     }
 
@@ -324,8 +325,8 @@ export class DnsService {
           .run(`${newName}:${server.game_port}`, row.id);
       } catch (err) {
         allServersOk = false;
-        console.warn(
-          `[dns] host-label migration: failed to repoint SRV for server ${server.id}: ${(err as Error).message}`,
+        log.warn(
+          `host-label migration: failed to repoint SRV for server ${server.id}: ${(err as Error).message}`,
         );
       }
     }
@@ -334,7 +335,7 @@ export class DnsService {
       // Not every SRV is repointed yet. Leave the marker unset so the next start
       // retries — the A-record steps above are safely idempotent to redo, and
       // servers that already succeeded just get a harmless redundant update.
-      console.warn('[dns] host-label migration deferred, will retry next start: some SRV records were not repointed');
+      log.warn('host-label migration deferred, will retry next start: some SRV records were not repointed');
       return;
     }
 
@@ -354,8 +355,8 @@ export class DnsService {
         await cf.createCname(oldName, newName);
       }
     } catch (err) {
-      console.warn(
-        `[dns] host-label migration: could not redirect old host record ${oldName}: ${(err as Error).message}`,
+      log.warn(
+        `host-label migration: could not redirect old host record ${oldName}: ${(err as Error).message}`,
       );
     }
   }
@@ -552,7 +553,7 @@ export class DnsService {
       try {
         await cf.deleteRecord(record.recordId);
       } catch (err) {
-        console.warn(`[dns] failed to roll back ${record.name}: ${(err as Error).message}`);
+        log.warn(`failed to roll back ${record.name}: ${(err as Error).message}`);
       }
     }
   }
@@ -584,7 +585,7 @@ export class DnsService {
       try {
         await cf.deleteRecord(recordId);
       } catch (err) {
-        console.warn(`[dns] failed to delete stale record ${recordId}: ${(err as Error).message}`);
+        log.warn(`failed to delete stale record ${recordId}: ${(err as Error).message}`);
       }
     }
   }
