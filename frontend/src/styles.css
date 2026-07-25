@@ -22,6 +22,8 @@ body {
 }
 a { color: var(--accent-2); }
 
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+
 .app-header {
   display: flex;
   align-items: center;
@@ -32,7 +34,7 @@ a { color: var(--accent-2); }
 }
 .app-header h1 { font-size: 18px; margin: 0; }
 .app-header .brand { display: flex; align-items: center; gap: 10px; }
-.container { max-width: 1000px; margin: 0 auto; padding: 22px; }
+.container { max-width: 1000px; margin: 0 auto; padding: 22px; flex: 1; }
 
 .app-footer {
   display: flex;
