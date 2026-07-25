@@ -400,6 +400,20 @@ export class ServerManager {
       : { source: 'generate' };
     const next: DraftState = { ...prev, ...patch };
 
+    // A passing probe pins the save it generated, so what gets created is exactly
+    // what was tested. Editing the world afterwards invalidates that save: drop it
+    // so the next test regenerates the map from the settings now on screen instead
+    // of silently re-testing (and creating) the old one. An uploaded save is the
+    // draft's whole point — never touch it.
+    if (next.source !== 'save' && row.generate_new_save === 0 && this.worldChanged(row, patch)) {
+      try {
+        if (row.save_name) serverFiles.deleteSave(id, row.save_name);
+      } catch (err) {
+        console.warn(`[draft ${id}] could not drop the tested save: ${(err as Error).message}`);
+      }
+      this.repo.update(id, { generate_new_save: 1 } as never);
+    }
+
     const cols: Record<string, string | number> = {};
     if (patch.name !== undefined) cols.name = patch.name.trim();
     if (patch.description !== undefined) cols.description = patch.description.trim();
@@ -420,6 +434,26 @@ export class ServerManager {
     }
     this.repo.setDraftState(id, JSON.stringify(next), this.draftExpiry());
     return this.repo.getById(id)!;
+  }
+
+  /**
+   * Does this patch describe a different world than the draft already holds? Only
+   * the inputs to map generation count — the wizard autosaves the whole form on
+   * every keystroke, so name/description edits must not invalidate a tested map.
+   */
+  private worldChanged(row: ServerRow, patch: Partial<DraftState>): boolean {
+    if (
+      patch.mapGen !== undefined &&
+      JSON.stringify(patch.mapGen) !== (row.map_gen_settings_json ?? 'null')
+    )
+      return true;
+    if (
+      patch.mapSettings !== undefined &&
+      (patch.mapSettings ? JSON.stringify(patch.mapSettings) : null) !== row.map_settings_json
+    )
+      return true;
+    // Game mode drives which bundled mods are on, and those generate the map.
+    return patch.gameMode !== undefined && cleanGameMode(patch.gameMode) !== row.game_mode;
   }
 
   /** Store an uploaded save into a Load-from-save draft and make it the boot target. */

@@ -89,11 +89,14 @@ export function CreateServerForm({
   const [confirmChange, setConfirmChange] = useState(false);
   const [startAfter, setStartAfter] = useState(false);
   const [probe, setProbe] = useState<{
-    phase: 'idle' | 'running' | 'failed';
+    phase: 'idle' | 'running' | 'passed' | 'failed';
+    // Whether this run finalizes the draft on success ("Test & Create") or just
+    // reports back ("Test") — also what "Re-test" repeats.
+    create: boolean;
     status: string;
     log: string[];
     errors: string[];
-  }>({ phase: 'idle', status: '', log: [], errors: [] });
+  }>({ phase: 'idle', create: true, status: '', log: [], errors: [] });
   const finalized = useRef(false);
   const esRef = useRef<EventSource | null>(null);
   const logBoxRef = useRef<HTMLDivElement>(null);
@@ -290,8 +293,10 @@ export function CreateServerForm({
     }
   };
 
-  // Test & Create: stream a pre-flight boot probe, then create only if it passes.
-  const testAndCreate = async () => {
+  // Stream a pre-flight boot probe. `create` picks the two flavours: Test & Create
+  // finalizes the draft the moment the probe passes; Test reports the result and
+  // leaves the draft alone, so you can fix things and run it again.
+  const runProbe = async (create: boolean) => {
     if (!draftId) return;
     try {
       await api.updateDraft(draftId, patch); // flush latest field values first
@@ -299,9 +304,9 @@ export function CreateServerForm({
       toastError((err as Error).message);
       return;
     }
-    setProbe({ phase: 'running', status: 'Starting test…', log: [], errors: [] });
+    setProbe({ phase: 'running', create, status: 'Starting test…', log: [], errors: [] });
     const es = new EventSource(
-      `/api/servers/draft/${draftId}/test-create?start=${startAfter ? 1 : 0}`,
+      `/api/servers/draft/${draftId}/test-create?create=${create ? 1 : 0}&start=${startAfter ? 1 : 0}`,
       { withCredentials: true },
     );
     esRef.current = es;
@@ -316,6 +321,12 @@ export function CreateServerForm({
     es.addEventListener('failed', (e) => {
       const { errors } = JSON.parse((e as MessageEvent).data) as { errors: string[] };
       setProbe((p) => ({ ...p, phase: 'failed', status: 'Test failed', errors }));
+      es.close();
+    });
+    // Test-only run: the draft is still a draft, waiting on you to create it.
+    es.addEventListener('passed', (e) => {
+      const { message } = JSON.parse((e as MessageEvent).data) as { message: string };
+      setProbe((p) => ({ ...p, phase: 'passed', status: message }));
       es.close();
     });
     es.addEventListener('done', (e) => {
@@ -335,7 +346,7 @@ export function CreateServerForm({
     };
   };
 
-  const resetProbe = () => setProbe({ phase: 'idle', status: '', log: [], errors: [] });
+  const resetProbe = () => setProbe({ phase: 'idle', create: true, status: '', log: [], errors: [] });
 
   // Generate is always ready; Import once decoded; Save once a file is uploaded.
   const finalizeReady =
@@ -599,6 +610,18 @@ export function CreateServerForm({
 
             {probe.phase !== 'idle' ? (
               <div style={{ marginTop: 16 }}>
+                {probe.phase === 'passed' && (
+                  <div className="panel" style={{ borderColor: 'var(--green)', marginBottom: 10 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--green)', marginBottom: 6 }}>
+                      Test passed ✓
+                    </div>
+                    <div className="small muted">
+                      This configuration generated its map and reached “hosting” in a throwaway
+                      container — no server was created. Create it now, or keep editing and test
+                      again.
+                    </div>
+                  </div>
+                )}
                 {probe.phase === 'failed' && probe.errors.length > 0 && (
                   <div className="panel" style={{ borderColor: 'var(--red)', marginBottom: 10 }}>
                     <div style={{ fontWeight: 600, color: 'var(--red)', marginBottom: 6 }}>
@@ -627,13 +650,50 @@ export function CreateServerForm({
                     <button className="ghost" onClick={resetProbe}>
                       Back to editing
                     </button>
-                    <button className="ghost" disabled={creating} onClick={() => void create()}>
+                    <button
+                      className="ghost"
+                      disabled={creating || !canCreate}
+                      onClick={() => void create()}
+                    >
                       Create anyway
                     </button>
-                    <button className="primary" onClick={() => void testAndCreate()}>
+                    <button className="primary" onClick={() => void runProbe(probe.create)}>
                       Re-test
                     </button>
                   </div>
+                )}
+                {probe.phase === 'passed' && (
+                  <>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                      <input
+                        type="checkbox"
+                        style={{ width: 'auto' }}
+                        checked={startAfter}
+                        onChange={(e) => setStartAfter(e.target.checked)}
+                      />
+                      Start server after creating
+                    </label>
+                    {!canCreate && (
+                      <div className="small muted" style={{ marginTop: 8 }}>
+                        Add a name and subdomain before creating this server.
+                      </div>
+                    )}
+                    <div className="row" style={{ marginTop: 10, justifyContent: 'flex-end' }}>
+                      <button className="ghost" onClick={resetProbe}>
+                        Back to editing
+                      </button>
+                      <button className="ghost" onClick={() => void runProbe(false)}>
+                        Re-test
+                      </button>
+                      <button
+                        className="primary"
+                        disabled={creating || !canCreate}
+                        onClick={() => void create()}
+                      >
+                        {creating ? 'Creating…' : 'Create server'}
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             ) : (
@@ -661,12 +721,19 @@ export function CreateServerForm({
                       <>
                         <button
                           className="ghost"
+                          title="Boot this configuration once in a throwaway container and report back — nothing is created"
+                          onClick={() => void runProbe(false)}
+                        >
+                          Test
+                        </button>
+                        <button
+                          className="ghost"
                           disabled={creating || !canCreate}
                           onClick={() => void create()}
                         >
                           {creating ? 'Creating…' : 'Create without testing'}
                         </button>
-                        <button className="primary" disabled={!canCreate} onClick={() => void testAndCreate()}>
+                        <button className="primary" disabled={!canCreate} onClick={() => void runProbe(true)}>
                           Test &amp; Create
                         </button>
                       </>
