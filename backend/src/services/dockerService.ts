@@ -6,7 +6,6 @@ import { randomBytes } from 'node:crypto';
 import { Writable } from 'node:stream';
 import type { AppConfig } from '../config.js';
 import type { ServerRow } from '../db/models.js';
-import type { FactorioAccount } from './factorioAccount.js';
 import { DockerError } from '../lib/errors.js';
 import { getLogger } from '../lib/logger.js';
 
@@ -345,7 +344,7 @@ export class DockerService {
     }
   }
 
-  private envFor(server: ServerRow, account?: FactorioAccount): string[] {
+  private envFor(server: ServerRow): string[] {
     const env: Record<string, string> = {
       SAVE_NAME: server.save_name,
       GENERATE_NEW_SAVE: server.generate_new_save === 1 ? 'true' : 'false',
@@ -357,14 +356,12 @@ export class DockerService {
       RCON_PORT: String(RCON_PORT_INTERNAL),
       RCON_PASSWORD: server.rcon_password,
       // We manage mods ourselves via the Mod Portal API, so keep the image from
-      // trying to update them on boot (which would also fail without creds).
+      // trying to update them on boot (which would also fail without creds). Note
+      // this also means the image's USERNAME/TOKEN env vars (its mod-updater's only
+      // consumer) are never read — the account credentials for public-server listing
+      // go into server-settings.json instead (see ServerFilesService.effectiveSettings).
       UPDATE_MODS_ON_START: 'false',
     };
-    // The single global Factorio.com account, used for public-server listing.
-    if (account?.username && account?.token) {
-      env.USERNAME = account.username;
-      env.TOKEN = account.token;
-    }
     if (this.config.puid) env.PUID = this.config.puid;
     if (this.config.pgid) env.PGID = this.config.pgid;
     return Object.entries(env).map(([k, v]) => `${k}=${v}`);
@@ -375,11 +372,7 @@ export class DockerService {
    * the path as the *Docker daemon* sees it (the host path), not the manager's
    * in-container view. Returns the container id.
    */
-  async createContainer(
-    server: ServerRow,
-    hostDataDir: string,
-    account?: FactorioAccount,
-  ): Promise<string> {
+  async createContainer(server: ServerRow, hostDataDir: string): Promise<string> {
     const gamePort = String(server.game_port);
     const rconPort = String(server.rcon_port);
     const image = this.imageFor(server);
@@ -388,7 +381,7 @@ export class DockerService {
       const container = await this.docker.createContainer({
         name: this.containerName(server.id),
         Image: image,
-        Env: this.envFor(server, account),
+        Env: this.envFor(server),
         ExposedPorts: {
           [`${gamePort}/udp`]: {},
           [`${RCON_PORT_INTERNAL}/tcp`]: {},
