@@ -129,6 +129,7 @@ async function main() {
   } else ctx.ddns.start();
   ctx.backups.start();
   ctx.draftPrune.start();
+  ctx.updateCheck.start();
 
   const app = express();
   app.use(cors({ origin: true, credentials: true }));
@@ -180,6 +181,7 @@ async function main() {
     shutdownLog.info('shutting down');
     ctx.ddns.stop();
     ctx.backups.stop();
+    ctx.updateCheck.stop();
     if (config.stopServersOnShutdown) {
       try {
         const n = await ctx.docker.stopAllManaged(config.shutdownStopTimeoutSecs);

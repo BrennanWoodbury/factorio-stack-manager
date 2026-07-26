@@ -236,6 +236,18 @@ function SystemPanel({ system }: { system: SystemStatus }) {
               {system.version}
             </div>
             <div className="l">Version</div>
+            {system.update?.updateAvailable && (
+              <a
+                href={system.update.url}
+                target="_blank"
+                rel="noreferrer"
+                className="small"
+                style={{ display: 'block', marginTop: 4, color: 'var(--accent)' }}
+                title={`A newer release, ${system.update.latestVersion}, is out`}
+              >
+                ↑ v{system.update.latestVersion} available
+              </a>
+            )}
           </div>
         )}
         {system.dns.enabled && (

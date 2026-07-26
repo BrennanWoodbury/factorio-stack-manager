@@ -15,6 +15,7 @@ import { ImageProfileService } from './services/imageProfile.js';
 import { DdnsJob } from './jobs/ddns.js';
 import { BackupJob } from './jobs/backup.js';
 import { DraftPruneJob } from './jobs/draftPrune.js';
+import { UpdateCheckJob } from './jobs/updateCheck.js';
 
 /** Wires up all singletons from config. Built once at startup. */
 export interface AppContext {
@@ -32,6 +33,7 @@ export interface AppContext {
   ddns: DdnsJob;
   backups: BackupJob;
   draftPrune: DraftPruneJob;
+  updateCheck: UpdateCheckJob;
 }
 
 export function buildContext(config: AppConfig): AppContext {
@@ -51,5 +53,6 @@ export function buildContext(config: AppConfig): AppContext {
   const ddns = new DdnsJob(dns);
   const backups = new BackupJob(manager);
   const draftPrune = new DraftPruneJob(manager);
-  return { config, db, repo, allocator, docker, dns, rcon, mods, modpacks, mapGenTemplates, manager, ddns, backups, draftPrune };
+  const updateCheck = new UpdateCheckJob(config);
+  return { config, db, repo, allocator, docker, dns, rcon, mods, modpacks, mapGenTemplates, manager, ddns, backups, draftPrune, updateCheck };
 }

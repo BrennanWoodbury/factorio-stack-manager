@@ -103,6 +103,13 @@ export const config = {
 
   // DNS / DDNS (Cloudflare) is configured entirely from the dashboard and stored
   // in the DB (see services/dnsSettings.ts) — there are no DNS env vars.
+
+  // Update check: on startup and nightly, ask GitHub for the latest release tag
+  // and compare it to appVersion so the dashboard can nudge the operator. Never
+  // downloads or installs anything itself. Set to false for an offline/air-gapped
+  // install so the manager never phones home.
+  updateCheckEnabled: opt('UPDATE_CHECK_ENABLED', 'true') !== 'false',
+  updateCheckRepo: opt('UPDATE_CHECK_REPO', 'BrennanWoodbury/factorio-stack-manager'),
 } as const;
 
 export type AppConfig = typeof config;

@@ -172,6 +172,8 @@ It applies the `unraid` label automatically so reports remain searchable in this
 | `RESUME_SERVERS_ON_STARTUP` |      | `true`                         | On startup, resume servers that were running |
 | `SKIP_DB_BACKUP`        |          | `false`                        | Migrate without snapshotting the DB first (makes the upgrade one-way) |
 | `APP_VERSION`           |          | `dev`                          | Build identity; stamped by CI, shown on the dashboard |
+| `UPDATE_CHECK_ENABLED`  |          | `true`                         | Check GitHub for a newer release on startup and nightly; set `false` for an offline install |
+| `UPDATE_CHECK_REPO`     |          | `BrennanWoodbury/factorio-stack-manager` | Repo the update check queries |
 | `LOG_LEVEL`             |          | `info`                         | winston log level: `error`, `warn`, `info`, `debug`, ... |
 
 > **DNS / Cloudflare is not configured via env** — set the server domain, Zone ID, API token, DDNS
