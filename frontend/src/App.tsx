@@ -54,53 +54,55 @@ export function App() {
 
   return (
     <>
-      <header className="app-header">
-        <div className="brand" style={{ cursor: 'pointer' }} onClick={() => go('servers')}>
-          <BrandMark size={26} />
-          <h1>Factorio Server Manager</h1>
+      <div className="app-shell">
+        <header className="app-header">
+          <div className="brand" style={{ cursor: 'pointer' }} onClick={() => go('servers')}>
+            <BrandMark size={26} />
+            <h1>Factorio Server Manager</h1>
+          </div>
+          <div className="row" style={{ alignItems: 'center' }}>
+            <button className={tab === 'servers' ? 'primary' : 'ghost'} onClick={() => go('servers')}>
+              Servers
+            </button>
+            <button className={tab === 'modpacks' ? 'primary' : 'ghost'} onClick={() => go('modpacks')}>
+              Modpacks
+            </button>
+            <button className={tab === 'templates' ? 'primary' : 'ghost'} onClick={() => go('templates')}>
+              World Generation
+            </button>
+            <button className={tab === 'settings' ? 'primary' : 'ghost'} onClick={() => go('settings')}>
+              Settings
+            </button>
+            <NotificationsCenter />
+            <button
+              className="ghost"
+              onClick={async () => {
+                await api.logout();
+                setAuthed(false);
+              }}
+            >
+              Log out
+            </button>
+          </div>
+        </header>
+        <div className="container">
+          {tab === 'servers' &&
+            (selectedServer ? (
+              <ServerDetail id={selectedServer} onBack={() => setSelectedServer(null)} />
+            ) : (
+              <Dashboard onOpen={setSelectedServer} />
+            ))}
+          {tab === 'modpacks' &&
+            (selectedPack ? (
+              <ModpackDetail id={selectedPack} onBack={() => setSelectedPack(null)} />
+            ) : (
+              <ModpacksView onOpen={setSelectedPack} />
+            ))}
+          {tab === 'templates' && <MapGenTemplatesView />}
+          {tab === 'settings' && <SettingsView />}
         </div>
-        <div className="row" style={{ alignItems: 'center' }}>
-          <button className={tab === 'servers' ? 'primary' : 'ghost'} onClick={() => go('servers')}>
-            Servers
-          </button>
-          <button className={tab === 'modpacks' ? 'primary' : 'ghost'} onClick={() => go('modpacks')}>
-            Modpacks
-          </button>
-          <button className={tab === 'templates' ? 'primary' : 'ghost'} onClick={() => go('templates')}>
-            World Generation
-          </button>
-          <button className={tab === 'settings' ? 'primary' : 'ghost'} onClick={() => go('settings')}>
-            Settings
-          </button>
-          <NotificationsCenter />
-          <button
-            className="ghost"
-            onClick={async () => {
-              await api.logout();
-              setAuthed(false);
-            }}
-          >
-            Log out
-          </button>
-        </div>
-      </header>
-      <div className="container">
-        {tab === 'servers' &&
-          (selectedServer ? (
-            <ServerDetail id={selectedServer} onBack={() => setSelectedServer(null)} />
-          ) : (
-            <Dashboard onOpen={setSelectedServer} />
-          ))}
-        {tab === 'modpacks' &&
-          (selectedPack ? (
-            <ModpackDetail id={selectedPack} onBack={() => setSelectedPack(null)} />
-          ) : (
-            <ModpacksView onOpen={setSelectedPack} />
-          ))}
-        {tab === 'templates' && <MapGenTemplatesView />}
-        {tab === 'settings' && <SettingsView />}
+        <Footer />
       </div>
-      <Footer />
       <Toaster />
     </>
   );
