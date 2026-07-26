@@ -21,6 +21,14 @@ interface GithubRelease {
 }
 
 /**
+ * Whether `latest` should be flagged as an update over `current`. "dev" (an
+ * untagged local build) has nothing meaningful to compare against.
+ */
+export function isUpdateAvailable(current: string, latest: string | undefined): boolean {
+  return current !== 'dev' && !!latest && compareVersions(latest, current) > 0;
+}
+
+/**
  * Update-check job. Asks GitHub for the latest release once at startup and again
  * every night at {@link NIGHTLY_HOUR} local time, so a long-running instance
  * eventually notices a new tag without needing a restart. Read-only: it never
@@ -80,16 +88,11 @@ export class UpdateCheckJob {
   }
 
   status() {
-    // "dev" (an untagged local build) has nothing meaningful to compare against.
-    const updateAvailable =
-      this.config.appVersion !== 'dev' &&
-      !!this.latestVersion &&
-      compareVersions(this.latestVersion, this.config.appVersion) > 0;
     return {
       enabled: this.config.updateCheckEnabled,
       latestVersion: this.latestVersion,
       url: this.releaseUrl,
-      updateAvailable,
+      updateAvailable: isUpdateAvailable(this.config.appVersion, this.latestVersion),
       lastChecked: this.lastChecked,
       lastError: this.lastError,
     };
