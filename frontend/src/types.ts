@@ -298,6 +298,14 @@ export interface PortCapacity {
 export interface SystemStatus {
   /** Build identity of the running manager ("dev" for a local build). */
   version?: string;
+  update?: {
+    enabled: boolean;
+    latestVersion?: string;
+    url?: string;
+    updateAvailable: boolean;
+    lastChecked?: string;
+    lastError?: string;
+  };
   docker: { ok: boolean; error?: string };
   dns: { enabled: boolean; baseDomain: string | null; hostRecord: string | null };
   ddns: {

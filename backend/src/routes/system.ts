@@ -30,6 +30,7 @@ export function systemRouter(ctx: AppContext): Router {
 
       res.json({
         version: ctx.config.appVersion,
+        update: ctx.updateCheck.status(),
         docker: { ok: dockerOk, error: dockerError },
         dns: {
           enabled: ctx.dns.enabled,
