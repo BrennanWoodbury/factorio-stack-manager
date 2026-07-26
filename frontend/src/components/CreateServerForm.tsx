@@ -396,24 +396,10 @@ export function CreateServerForm({
 
   return (
     <>
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.6)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        paddingTop: 60,
-        zIndex: 10,
-      }}
-      onClick={() => void close()}
-    >
-      <div
-        className="panel"
-        style={{ width: 520, maxHeight: '85vh', overflowY: 'auto' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <button className="ghost" onClick={close} style={{ marginBottom: 14 }}>
+        ← Back to servers
+      </button>
+      <div className="panel">
         {phase === 'mode' ? (
           <>
             <h2 style={{ marginTop: 0 }}>New server</h2>
@@ -445,11 +431,6 @@ export function CreateServerForm({
                   </span>
                 </button>
               ))}
-            </div>
-            <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
-              <button className="ghost" onClick={() => void close()}>
-                Cancel
-              </button>
             </div>
           </>
         ) : (
@@ -802,7 +783,6 @@ export function CreateServerForm({
           </>
         )}
       </div>
-    </div>
       {confirmChange && (
         <ConfirmDialog
           title="Discard this draft?"

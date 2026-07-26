@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { DraftDto, PortCapacity, Server, ServerStatus, SystemStatus } from '../types';
 import { toastError } from '../ui';
-import { CreateServerForm } from './CreateServerForm';
 import { StatusBadge } from './StatusBadge';
 import { LifecycleControls } from './LifecycleControls';
 
@@ -22,12 +22,11 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
+  const navigate = useNavigate();
   const [servers, setServers] = useState<Server[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ServerStatus>>({});
   const [system, setSystem] = useState<SystemStatus | null>(null);
   const [drafts, setDrafts] = useState<DraftDto[]>([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [resumeId, setResumeId] = useState<string | null>(null);
 
   const loadDrafts = useCallback(async () => {
     try {
@@ -51,14 +50,8 @@ export function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
     void loadDrafts();
   }, [loadDrafts]);
 
-  const openNew = () => {
-    setResumeId(null);
-    setShowCreate(true);
-  };
-  const resumeDraft = (id: string) => {
-    setResumeId(id);
-    setShowCreate(true);
-  };
+  const openNew = () => navigate('/servers/new');
+  const resumeDraft = (id: string) => navigate(`/servers/new?draft=${id}`);
   const discardDraft = async (id: string) => {
     try {
       await api.discardDraft(id);
@@ -156,25 +149,6 @@ export function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
             </div>
           </div>
         </div>
-      )}
-
-      {showCreate && (
-        <CreateServerForm
-          dnsEnabled={system?.dns.enabled ?? false}
-          baseDomain={system?.dns.baseDomain ?? null}
-          resumeDraftId={resumeId ?? undefined}
-          onClose={() => {
-            setShowCreate(false);
-            setResumeId(null);
-            void loadDrafts(); // a dismissed draft may now exist / have changed
-          }}
-          onCreated={(id) => {
-            setShowCreate(false);
-            setResumeId(null);
-            void refresh();
-            onOpen(id);
-          }}
-        />
       )}
     </>
   );

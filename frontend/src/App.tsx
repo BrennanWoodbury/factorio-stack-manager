@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import { api, ApiError } from './api';
+import type { SystemStatus } from './types';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
+import { CreateServerForm } from './components/CreateServerForm';
 import { ServerDetail } from './components/ServerDetail';
 import { ModpacksView } from './components/ModpacksView';
 import { ModpackDetail } from './components/ModpackDetail';
@@ -54,6 +65,27 @@ function ServerDetailRoute() {
   const navigate = useNavigate();
   if (!id) return <Navigate to="/servers" replace />;
   return <ServerDetail id={id} onBack={() => navigate('/servers')} />;
+}
+
+function CreateServerRoute() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const draftId = searchParams.get('draft') ?? undefined;
+  const [system, setSystem] = useState<SystemStatus | null>(null);
+
+  useEffect(() => {
+    void api.systemStatus().then(setSystem).catch(() => {});
+  }, []);
+
+  return (
+    <CreateServerForm
+      dnsEnabled={system?.dns.enabled ?? false}
+      baseDomain={system?.dns.baseDomain ?? null}
+      resumeDraftId={draftId}
+      onClose={() => navigate('/servers')}
+      onCreated={(id) => navigate(`/servers/${id}`)}
+    />
+  );
 }
 
 function ModpackDetailRoute() {
@@ -111,6 +143,7 @@ function Shell({ onLoggedOut }: { onLoggedOut: () => void }) {
           <Routes>
             <Route path="/" element={<Navigate to="/servers" replace />} />
             <Route path="/servers" element={<Dashboard onOpen={(id) => navigate(`/servers/${id}`)} />} />
+            <Route path="/servers/new" element={<CreateServerRoute />} />
             <Route path="/servers/:id" element={<ServerDetailRoute />} />
             <Route path="/modpacks" element={<ModpacksView onOpen={(id) => navigate(`/modpacks/${id}`)} />} />
             <Route path="/modpacks/:id" element={<ModpackDetailRoute />} />
