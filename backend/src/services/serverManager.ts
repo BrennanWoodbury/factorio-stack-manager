@@ -287,7 +287,7 @@ export class ServerManager {
     // Phase 2: filesystem (idempotent, safe to leave behind if later steps fail).
     try {
       serverFiles.ensureDirs(id);
-      serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db));
+      serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db), getFactorioAccount(this.db));
       if (input.mods && input.mods.length > 0) {
         serverFiles.writeModList(id, input.mods);
       }
@@ -390,7 +390,7 @@ export class ServerManager {
     // Filesystem is best-effort/idempotent; a draft with no dir is still resumable.
     try {
       serverFiles.ensureDirs(id);
-      serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db));
+      serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db), getFactorioAccount(this.db));
       if (input.mods && input.mods.length > 0) serverFiles.writeModList(id, input.mods);
     } catch (err) {
       draftLog.warn(`file init failed for ${id}: ${(err as Error).message}`);
@@ -566,7 +566,7 @@ export class ServerManager {
 
     try {
       serverFiles.ensureDirs(id);
-      serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db));
+      serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db), getFactorioAccount(this.db));
     } catch (err) {
       // Non-fatal: settings are rewritten on start too.
       finalizeLog.warn(`settings write failed for ${id}: ${(err as Error).message}`);
@@ -603,7 +603,7 @@ export class ServerManager {
       /* default generate */
     }
     serverFiles.ensureDirs(id);
-    serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db));
+    serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db), getFactorioAccount(this.db));
     // Apply the game mode's bundled-mod enablement to the mod list (as start() does).
     // An impossible mode is reported here rather than thrown: the caller is streaming
     // this to the wizard, where it belongs in the result list like any other failure.
@@ -1094,7 +1094,7 @@ export class ServerManager {
     await this.docker.ensureNetwork();
     // Recreate the container each start so it always reflects current config
     // (env vars, ports). Data lives in the bind mount, so this is cheap.
-    serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db));
+    serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db), getFactorioAccount(this.db));
     // Enforce the game mode's bundled-mod enablement in the mod list, preserving any
     // other mods. Modded leaves the mod list to the applied modpack.
     await this.applyGameModeMods(row);
@@ -1163,11 +1163,7 @@ export class ServerManager {
       row = this.get(id);
 
       await this.docker.remove(id);
-      const containerId = await this.docker.createContainer(
-        row,
-        serverFiles.hostDir(id),
-        getFactorioAccount(this.db),
-      );
+      const containerId = await this.docker.createContainer(row, serverFiles.hostDir(id));
       try {
         await this.docker.start(id);
         return containerId;

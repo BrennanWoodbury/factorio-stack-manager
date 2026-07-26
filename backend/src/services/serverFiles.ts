@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { serversDir, config, getHostServersDir } from '../config.js';
 import type { ServerRow } from '../db/models.js';
+import type { FactorioAccount } from './factorioAccount.js';
 import { NotFoundError, ValidationError } from '../lib/errors.js';
 import { getLogger } from '../lib/logger.js';
 
@@ -126,10 +127,24 @@ export class ServerFilesService {
     return merged;
   }
 
-  /** The effective server-settings.json body: advanced ⊕ managed row fields. */
-  effectiveSettings(server: ServerRow, base?: Record<string, unknown>): Record<string, unknown> {
+  /**
+   * The effective server-settings.json body: advanced ⊕ managed row fields ⊕
+   * account credentials. `username`/`token` must live in this file — it's the
+   * only place the `factorio` binary reads them from (the image's USERNAME/TOKEN
+   * env vars only feed its mod-updater script, which the manager doesn't use).
+   * Without them, a `visibility.public` server fails to advertise itself with
+   * "Missing token", even though the account is configured in the manager.
+   */
+  effectiveSettings(
+    server: ServerRow,
+    base?: Record<string, unknown>,
+    account?: FactorioAccount,
+  ): Record<string, unknown> {
     return {
       ...this.getAdvancedSettings(server, base),
+      ...(account?.username && account?.token
+        ? { username: account.username, token: account.token }
+        : {}),
       name: server.name,
       description: server.description,
       max_players: server.max_players,
@@ -137,11 +152,11 @@ export class ServerFilesService {
   }
 
   /** Write server-settings.json from the server row. Called before each start. */
-  writeServerSettings(server: ServerRow, base?: Record<string, unknown>): void {
+  writeServerSettings(server: ServerRow, base?: Record<string, unknown>, account?: FactorioAccount): void {
     this.ensureDirs(server.id);
     fs.writeFileSync(
       path.join(this.configDir(server.id), 'server-settings.json'),
-      JSON.stringify(this.effectiveSettings(server, base), null, 2),
+      JSON.stringify(this.effectiveSettings(server, base, account), null, 2),
     );
   }
 
