@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from './api';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
@@ -12,13 +13,8 @@ import { BrandMark } from './components/BrandMark';
 import { Footer } from './components/Footer';
 import { Toaster } from './ui';
 
-type Tab = 'servers' | 'modpacks' | 'templates' | 'settings';
-
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [tab, setTab] = useState<Tab>('servers');
-  const [selectedServer, setSelectedServer] = useState<string | null>(null);
-  const [selectedPack, setSelectedPack] = useState<string | null>(null);
 
   const checkAuth = useCallback(async () => {
     try {
@@ -46,31 +42,57 @@ export function App() {
     );
   }
 
-  const go = (t: Tab) => {
-    setTab(t);
-    setSelectedServer(null);
-    setSelectedPack(null);
-  };
+  return (
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Shell onLoggedOut={() => setAuthed(false)} />
+    </BrowserRouter>
+  );
+}
+
+function ServerDetailRoute() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  if (!id) return <Navigate to="/servers" replace />;
+  return <ServerDetail id={id} onBack={() => navigate('/servers')} />;
+}
+
+function ModpackDetailRoute() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  if (!id) return <Navigate to="/modpacks" replace />;
+  return <ModpackDetail id={id} onBack={() => navigate('/modpacks')} />;
+}
+
+function Shell({ onLoggedOut }: { onLoggedOut: () => void }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = location.pathname.startsWith('/modpacks')
+    ? 'modpacks'
+    : location.pathname.startsWith('/templates')
+      ? 'templates'
+      : location.pathname.startsWith('/settings')
+        ? 'settings'
+        : 'servers';
 
   return (
     <>
       <div className="app-shell">
         <header className="app-header">
-          <div className="brand" style={{ cursor: 'pointer' }} onClick={() => go('servers')}>
+          <div className="brand" style={{ cursor: 'pointer' }} onClick={() => navigate('/servers')}>
             <BrandMark size={26} />
             <h1>Factorio Server Manager</h1>
           </div>
           <div className="row" style={{ alignItems: 'center' }}>
-            <button className={tab === 'servers' ? 'primary' : 'ghost'} onClick={() => go('servers')}>
+            <button className={activeTab === 'servers' ? 'primary' : 'ghost'} onClick={() => navigate('/servers')}>
               Servers
             </button>
-            <button className={tab === 'modpacks' ? 'primary' : 'ghost'} onClick={() => go('modpacks')}>
+            <button className={activeTab === 'modpacks' ? 'primary' : 'ghost'} onClick={() => navigate('/modpacks')}>
               Modpacks
             </button>
-            <button className={tab === 'templates' ? 'primary' : 'ghost'} onClick={() => go('templates')}>
+            <button className={activeTab === 'templates' ? 'primary' : 'ghost'} onClick={() => navigate('/templates')}>
               World Generation
             </button>
-            <button className={tab === 'settings' ? 'primary' : 'ghost'} onClick={() => go('settings')}>
+            <button className={activeTab === 'settings' ? 'primary' : 'ghost'} onClick={() => navigate('/settings')}>
               Settings
             </button>
             <NotificationsCenter />
@@ -78,7 +100,7 @@ export function App() {
               className="ghost"
               onClick={async () => {
                 await api.logout();
-                setAuthed(false);
+                onLoggedOut();
               }}
             >
               Log out
@@ -86,20 +108,16 @@ export function App() {
           </div>
         </header>
         <div className="container">
-          {tab === 'servers' &&
-            (selectedServer ? (
-              <ServerDetail id={selectedServer} onBack={() => setSelectedServer(null)} />
-            ) : (
-              <Dashboard onOpen={setSelectedServer} />
-            ))}
-          {tab === 'modpacks' &&
-            (selectedPack ? (
-              <ModpackDetail id={selectedPack} onBack={() => setSelectedPack(null)} />
-            ) : (
-              <ModpacksView onOpen={setSelectedPack} />
-            ))}
-          {tab === 'templates' && <MapGenTemplatesView />}
-          {tab === 'settings' && <SettingsView />}
+          <Routes>
+            <Route path="/" element={<Navigate to="/servers" replace />} />
+            <Route path="/servers" element={<Dashboard onOpen={(id) => navigate(`/servers/${id}`)} />} />
+            <Route path="/servers/:id" element={<ServerDetailRoute />} />
+            <Route path="/modpacks" element={<ModpacksView onOpen={(id) => navigate(`/modpacks/${id}`)} />} />
+            <Route path="/modpacks/:id" element={<ModpackDetailRoute />} />
+            <Route path="/templates" element={<MapGenTemplatesView />} />
+            <Route path="/settings" element={<SettingsView />} />
+            <Route path="*" element={<Navigate to="/servers" replace />} />
+          </Routes>
         </div>
         <Footer />
       </div>

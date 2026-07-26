@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Server, ServerStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -13,6 +14,7 @@ import { LifecycleControls } from './LifecycleControls';
 import { toastError } from '../ui';
 
 type Tab = 'overview' | 'console' | 'logs' | 'saves' | 'mapgen' | 'mods' | 'settings';
+const TABS: Tab[] = ['overview', 'console', 'logs', 'saves', 'mapgen', 'mods', 'settings'];
 const TAB_LABELS: Record<Tab, string> = {
   overview: 'Overview',
   console: 'Console',
@@ -26,7 +28,10 @@ const TAB_LABELS: Record<Tab, string> = {
 export function ServerDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const [server, setServer] = useState<Server | null>(null);
   const [status, setStatus] = useState<ServerStatus | null>(null);
-  const [tab, setTab] = useState<Tab>('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get('tab');
+  const tab: Tab = (TABS as string[]).includes(requested ?? '') ? (requested as Tab) : 'overview';
+  const setTab = (t: Tab) => setSearchParams(t === 'overview' ? {} : { tab: t });
 
   const load = useCallback(async () => {
     try {
@@ -83,7 +88,7 @@ export function ServerDetail({ id, onBack }: { id: string; onBack: () => void })
       </div>
 
       <div className="tabs">
-        {(['overview', 'console', 'logs', 'saves', 'mapgen', 'mods', 'settings'] as Tab[]).map((t) => (
+        {TABS.map((t) => (
           <div key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
             {TAB_LABELS[t]}
           </div>
