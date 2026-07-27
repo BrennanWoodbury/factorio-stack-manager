@@ -18,7 +18,7 @@ Project stewardship and review requirements are documented in [MAINTAINERS.md](M
 
 ---
 
-## How the networking works (read this first)
+## How the networking works
 
 Factorio's client (v1.1.67+) resolves connections via DNS SRV records. When a player enters
 `factory1.mydomain.com`, the client looks up:
@@ -54,7 +54,7 @@ network. It is **never forwarded and never appears in DNS**.
 
 ## One-time setup
 
-### 1. Forward a UDP port range on your router (manual, once)
+### 1. Forward a UDP port range on your router
 
 In your router's NAT / port-forwarding settings, forward a **contiguous UDP range** to this
 host's LAN IP, using the **same** external and internal ports:
@@ -69,7 +69,7 @@ host's LAN IP, using the **same** external and internal ports:
 Do **not** forward the RCON range. The app never allocates a game port outside this range, so any
 server it creates is guaranteed reachable.
 
-### 2. Cloudflare DNS (optional — configured in the dashboard, not env)
+### 2. Cloudflare DNS (optional)
 
 Skip this to run without DNS (players connect by `IP:port`). To enable automatic SRV + DDNS,
 open the dashboard → **DNS / Cloudflare settings** and enter your server domain, Zone ID and API
@@ -96,6 +96,8 @@ runs at startup, and **Sync DNS now** in the settings page reports each repaired
 ### 3. Configure and launch
 
 ```bash
+git clone https://github.com/BrennanWoodbury/factorio-stack-manager.git
+cd factorio-stack-manager
 cp .env.example .env
 # edit .env — at minimum set ADMIN_PASSWORD (that's the only required var)
 docker compose up -d --build
