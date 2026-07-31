@@ -112,7 +112,7 @@ function Shell({ onLoggedOut }: { onLoggedOut: () => void }) {
         <header className="app-header">
           <div className="brand" style={{ cursor: 'pointer' }} onClick={() => navigate('/servers')}>
             <BrandMark size={26} />
-            <h1>Factorio Server Manager</h1>
+            <h1>Factorio Stack Manager</h1>
           </div>
           <div className="row" style={{ alignItems: 'center' }}>
             <button className={activeTab === 'servers' ? 'primary' : 'ghost'} onClick={() => navigate('/servers')}>
