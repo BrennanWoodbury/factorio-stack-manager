@@ -130,6 +130,7 @@ async function main() {
   ctx.backups.start();
   ctx.draftPrune.start();
   ctx.updateCheck.start();
+  ctx.telemetry.start();
 
   const app = express();
   app.use(cors({ origin: true, credentials: true }));
@@ -182,6 +183,7 @@ async function main() {
     ctx.ddns.stop();
     ctx.backups.stop();
     ctx.updateCheck.stop();
+    ctx.telemetry.stop();
     if (config.stopServersOnShutdown) {
       try {
         const n = await ctx.docker.stopAllManaged(config.shutdownStopTimeoutSecs);
