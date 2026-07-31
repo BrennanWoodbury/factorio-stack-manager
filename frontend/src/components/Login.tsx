@@ -23,7 +23,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     <div className="login-wrap">
       <form className="panel login-box" onSubmit={submit}>
         <div style={{ textAlign: 'center', fontSize: 34 }}>🏭</div>
-        <h2 style={{ textAlign: 'center' }}>Factorio Server Manager</h2>
+        <h2 style={{ textAlign: 'center' }}>Factorio Stack Manager</h2>
         <label>Admin password</label>
         <input
           type="password"

@@ -5,7 +5,7 @@
  */
 export function BrandMark({ size = 26 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="Factorio Server Manager">
+    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="Factorio Stack Manager">
       <path
         fill="#f4a338"
         fillRule="evenodd"
