@@ -53,6 +53,9 @@ services:
       # Default false => games keep running across a manager restart/update.
       STOP_SERVERS_ON_SHUTDOWN: ${STOP_SERVERS_ON_SHUTDOWN:-false}
       # DNS / DDNS (Cloudflare) is configured in the dashboard, not via env.
+
+      # --- Anonymous usage ping (see README "Anonymous usage statistics") ---
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
     volumes:
       # Manage sibling containers via the host Docker daemon.
       - /var/run/docker.sock:/var/run/docker.sock
