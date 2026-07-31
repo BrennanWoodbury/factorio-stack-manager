@@ -176,11 +176,25 @@ It applies the `unraid` label automatically so reports remain searchable in this
 | `APP_VERSION`           |          | `dev`                          | Build identity; stamped by CI, shown on the dashboard |
 | `UPDATE_CHECK_ENABLED`  |          | `true`                         | Check GitHub for a newer release on startup and nightly; set `false` for an offline install |
 | `UPDATE_CHECK_REPO`     |          | `BrennanWoodbury/factorio-stack-manager` | Repo the update check queries |
+| `TELEMETRY_ENABLED`     |          | `true`                         | Send an anonymous daily usage ping; set `false` to disable |
+| `APTABASE_HOST`         |          | —                               | Self-hosted [telemetry collector](https://github.com/BrennanWoodbury/telemetry-collector-aptabase) URL |
+| `APTABASE_APP_KEY`      |          | —                               | This app's key on that collector |
 | `LOG_LEVEL`             |          | `info`                         | winston log level: `error`, `warn`, `info`, `debug`, ... |
 
 > **DNS / Cloudflare is not configured via env** — set the server domain, Zone ID, API token, DDNS
 > interval and IP-check URL in the dashboard (**DNS / Cloudflare settings**). The host record is
 > derived automatically; settings are stored in the database.
+
+> **Anonymous usage statistics.** Once at startup and nightly, the manager sends one small ping to
+> a self-hosted, privacy-first [Aptabase](https://github.com/aptabase/aptabase) instance I run —
+> so I have a rough sense of how many installs exist and can prioritize fixes for real deployments.
+> The payload is a random id generated once for this install (stored locally, never derived from
+> your IP, MAC address, hostname, or anything else identifying), the app version, your OS
+> platform/version, and a count of how many servers you're managing — nothing about server names,
+> domains, players, saves, or mods. See
+> [jobs/telemetry.ts](backend/src/jobs/telemetry.ts) for the exact payload and
+> [telemetry-collector-aptabase](https://github.com/BrennanWoodbury/telemetry-collector-aptabase) for how it's
+> received and stored. Set `TELEMETRY_ENABLED=false` to turn it off entirely.
 
 ---
 

@@ -110,6 +110,21 @@ export const config = {
   // install so the manager never phones home.
   updateCheckEnabled: opt('UPDATE_CHECK_ENABLED', 'true') !== 'false',
   updateCheckRepo: opt('UPDATE_CHECK_REPO', 'BrennanWoodbury/factorio-stack-manager'),
+
+  // Anonymous usage ping: once at startup and nightly, sends a random per-install
+  // id (generated locally, never derived from IP/MAC/hostname), the app version,
+  // OS, and a count of managed servers to a self-hosted Aptabase collector — see
+  // https://github.com/BrennanWoodbury/telemetry-collector-aptabase for exactly what's
+  // collected and why. Opt-out: set TELEMETRY_ENABLED=false, or air-gapped
+  // installs can leave APTABASE_HOST/APTABASE_APP_KEY unset (both required; the
+  // job stays off if either is empty, so it never fires at a placeholder URL).
+  telemetryEnabled: opt('TELEMETRY_ENABLED', 'true') !== 'false',
+  // Hardcoded the same way updateCheckRepo above is — so installs report in out
+  // of the box under the opt-out model, not just when self-hosters opt in.
+  // App-Keys are not secret (Aptabase's own design: they ship inside client
+  // apps/bundles same as any SDK key), so baking this in is intentional.
+  aptabaseHost: opt('APTABASE_HOST', 'https://metrics.bwoody.net'),
+  aptabaseAppKey: opt('APTABASE_APP_KEY', 'A-SH-8471241288'),
 } as const;
 
 export type AppConfig = typeof config;

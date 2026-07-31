@@ -16,6 +16,7 @@ import { DdnsJob } from './jobs/ddns.js';
 import { BackupJob } from './jobs/backup.js';
 import { DraftPruneJob } from './jobs/draftPrune.js';
 import { UpdateCheckJob } from './jobs/updateCheck.js';
+import { TelemetryJob } from './jobs/telemetry.js';
 
 /** Wires up all singletons from config. Built once at startup. */
 export interface AppContext {
@@ -34,6 +35,7 @@ export interface AppContext {
   backups: BackupJob;
   draftPrune: DraftPruneJob;
   updateCheck: UpdateCheckJob;
+  telemetry: TelemetryJob;
 }
 
 export function buildContext(config: AppConfig): AppContext {
@@ -54,5 +56,6 @@ export function buildContext(config: AppConfig): AppContext {
   const backups = new BackupJob(manager);
   const draftPrune = new DraftPruneJob(manager);
   const updateCheck = new UpdateCheckJob(config);
-  return { config, db, repo, allocator, docker, dns, rcon, mods, modpacks, mapGenTemplates, manager, ddns, backups, draftPrune, updateCheck };
+  const telemetry = new TelemetryJob(config, db, repo);
+  return { config, db, repo, allocator, docker, dns, rcon, mods, modpacks, mapGenTemplates, manager, ddns, backups, draftPrune, updateCheck, telemetry };
 }
