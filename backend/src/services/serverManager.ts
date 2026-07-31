@@ -1092,6 +1092,22 @@ export class ServerManager {
   async start(id: string): Promise<void> {
     const row = this.get(id);
     await this.docker.ensureNetwork();
+    // The recorded save can go missing (deleted by hand, a botched restore, a
+    // wizard step that pinned generate_new_save=0 before the upload landed) —
+    // without this, the container starts looking for a file that isn't there and
+    // dies with a raw Factorio-image error instead of a clear one. Fall back to
+    // the newest save on disk: autosaves land in the same directory, so this is
+    // usually the last autosave.
+    if (row.generate_new_save === 0 && !serverFiles.saveExists(id, row.save_name)) {
+      const fallback = serverFiles.latestSaveName(id);
+      if (!fallback) {
+        throw new ValidationError(
+          `Save "${row.save_name}" not found for server "${row.name}", and no other saves exist to fall back to`,
+        );
+      }
+      managerLog.warn(`${id}: save "${row.save_name}" missing; falling back to latest save "${fallback}"`);
+      this.repo.update(id, { save_name: fallback } as never);
+    }
     // Recreate the container each start so it always reflects current config
     // (env vars, ports). Data lives in the bind mount, so this is cheap.
     serverFiles.writeServerSettings(row, getGlobalAdvancedSettings(this.db), getFactorioAccount(this.db));
