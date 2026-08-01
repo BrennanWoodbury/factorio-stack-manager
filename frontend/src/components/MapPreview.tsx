@@ -6,6 +6,15 @@ import { getPath, isModdedMode, previewPlanetsForMode, setPath } from './MapGenE
 import { ExperimentalNote } from './ExperimentalNote';
 
 /**
+ * A random map seed in Factorio's full uint32 range (0 … 2^32-1), excluding 0 and 1
+ * — low sentinel values that are reported to be treated as "pick a random seed"
+ * rather than as the literal seed. Yields 2 … 4294967295.
+ */
+export function randomSeed(): number {
+  return Math.floor(Math.random() * (2 ** 32 - 2)) + 2;
+}
+
+/**
  * Renders a map preview PNG for the given (unsaved) settings via a backend one-shot.
  * For Space Age, each planet (Nauvis, Vulcanus, Fulgora, …) can be previewed; the world
  * seed is held in the settings so every planet shows the same world. Click the image to
@@ -52,8 +61,7 @@ export function MapPreview({
     // random one when the box is empty. Either way we render with an explicit seed and
     // write it back, so the box always shows the seed the preview actually used.
     const current = typeof seedRaw === 'number' ? seedRaw : undefined;
-    const effective =
-      opts?.reroll || current === undefined ? Math.floor(Math.random() * 2 ** 31) : current;
+    const effective = opts?.reroll || current === undefined ? randomSeed() : current;
     if (effective !== current) setSeed(effective);
     try {
       const blob = await api.previewMap(serverId, { mapGen, planet: which, seed: effective, size: 1024 });

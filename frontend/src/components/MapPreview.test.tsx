@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MapPreview } from './MapPreview';
+import { MapPreview, randomSeed } from './MapPreview';
 import type { MapGenSettings } from '../types';
 
 const apiMocks = vi.hoisted(() => ({
@@ -35,9 +35,10 @@ afterEach(() => {
 
 describe('MapPreview seed box', () => {
   test('reroll mints a fresh seed, uses it, and writes it into the box', async () => {
-    // Fix Math.random so the rerolled seed is deterministic: floor(0.5 * 2**31).
-    const expected = Math.floor(0.5 * 2 ** 31);
+    // Fix Math.random so the rerolled seed is deterministic, and derive the expected
+    // value from the same full-uint32 (excl. 0/1) range the component draws from.
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const expected = randomSeed();
 
     render(<Harness />);
     expect(seedBox().value).toBe(''); // starts empty (random)
