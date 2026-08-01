@@ -1271,9 +1271,13 @@ export class ServerManager {
 
   /**
    * Render a map preview PNG for the given settings (or the server's saved ones) via
-   * a throwaway one-shot. Runs the binary with `--generate-map-preview`, mounting the
-   * server's data dir (so its mods resolve), and returns the PNG bytes. Preview-only:
-   * writes to a scratch dir, never touches the real save/config.
+   * a throwaway one-shot. Runs the binary with `--generate-map-preview` against the
+   * server's own mod set — every preview, every planet — and returns the PNG bytes.
+   * Preview-only: writes to a scratch dir, never touches the real save/config.
+   *
+   * The mod dir has to be passed explicitly. `runOneShot` invokes the bare binary, so
+   * without it Factorio resolves write-data to its own install root (/opt/factorio) and
+   * renders bundled defaults — a picture of a world the server would never generate.
    */
   async previewMap(
     id: string,
@@ -1292,17 +1296,17 @@ export class ServerManager {
       '--map-gen-settings',
       settingsPath,
     ];
-    // Non-Nauvis planets (Vulcanus, Fulgora, …) only exist with Space Age loaded, so
-    // enable it per game mode and mount the mod dir. Nauvis previews keep the original
-    // bundled-defaults path untouched (no regression).
+    // Reconcile mod-list.json with the game mode the same way map generation does, then
+    // point the render at the server's mods. Nauvis included: terrain mods (Alien Biomes,
+    // Krastorio, …) change it too, and a preview that ignores them sends the player off a
+    // seed they can't actually get.
+    await this.applyGameModeMods(row);
+    args.push('--mod-directory', '/factorio/mods');
     const planet = opts.planet;
-    if (planet && planet !== 'nauvis') {
-      await this.applyGameModeMods(row);
-      args.push('--mod-directory', '/factorio/mods');
-    }
     if (planet) args.push('--map-preview-planet', planet);
     if (opts.seed !== undefined && Number.isFinite(opts.seed)) args.push('--map-gen-seed', String(Math.floor(opts.seed)));
-    const { exitCode, logs } = await this.docker.runOneShot(row, serverFiles.hostDir(id), args, 90_000);
+    // Loading a real mod set costs a full data stage, so allow more than a bare render.
+    const { exitCode, logs } = await this.docker.runOneShot(row, serverFiles.hostDir(id), args, 180_000);
     if (exitCode !== 0) {
       throw new DockerError(`map preview failed (exit ${exitCode}): ${logs.slice(-500)}`);
     }

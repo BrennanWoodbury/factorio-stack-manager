@@ -164,13 +164,16 @@ function planetsForMode(mode: string): Planet[] {
 }
 
 /**
- * Planets that can be previewed for a mode: Nauvis for vanilla, all Space Age planets
- * for SA and for mods sitting on top of it. A bare "Modded" is Nauvis-only, because
- * without a named base we can't know a pack's surfaces.
+ * Planets that can be previewed for a mode. Previews render with the server's mods
+ * loaded, so any mode carrying a mod set gets the full list — we can't enumerate a
+ * pack's surfaces from the mode name, and offering too many beats hiding a planet the
+ * pack actually has. Plain vanilla stays Nauvis-only: there, the others provably
+ * don't exist. A planet the loaded mods don't define fails the render with the game's
+ * own message.
  */
 export function previewPlanetsForMode(mode: string): { key: string; label: string }[] {
-  if (mode === 'modded') return [{ key: 'nauvis', label: 'Nauvis' }];
-  return planetsForMode(mode).map((p) => ({ key: p.key, label: p.label }));
+  const planets = mode === 'vanilla' ? planetsForMode(mode) : PLANETS;
+  return planets.map((p) => ({ key: p.key, label: p.label }));
 }
 
 /** Turn an autoplace-control name into a readable label (e.g. tungsten_ore → Tungsten ore). */
