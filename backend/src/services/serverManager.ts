@@ -1,4 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { AppConfig } from '../config.js';
 import { kvGet, kvSet, type DB } from '../db/index.js';
 import type { ServerRow, DraftState } from '../db/models.js';
@@ -25,7 +27,8 @@ import {
   type ImageProfile,
 } from './imageProfile.js';
 import { describeProblems, validateModSet, type ModProblem } from './modCompat.js';
-import type { ModService } from './modService.js';
+import { effectsFor, scanModZip, type RuntimeMapGenMod } from './mapGenScan.js';
+import { readModZipInfo, type ModService } from './modService.js';
 import {
   CASCADE,
   getGlobalDefaults,
@@ -124,6 +127,9 @@ const TAG_RE = /^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$/;
 export class ServerManager {
   /** Bundled-mod graph per Factorio image, read from the image and cached. */
   readonly imageProfiles: ImageProfileService;
+
+  /** Last planet listing per server, valid only for the mod set that produced it. */
+  private readonly planetCache = new Map<string, { key: string; planets: string[] }>();
 
   constructor(
     private readonly db: DB,
@@ -1379,6 +1385,91 @@ export class ServerManager {
     const data = JSON.parse(json) as { map_gen_settings?: Record<string, unknown>; map_settings?: Record<string, unknown> };
     if (!data.map_gen_settings) throw new DockerError('baseline produced no map_gen_settings');
     return { mapGen: data.map_gen_settings, mapSettings: data.map_settings ?? {} };
+  }
+
+  /**
+   * Every planet this server's loaded mods define, e.g. ['aquilo', 'gleba', 'maraxsis',
+   * 'nauvis', …]. Space Age made planets a data-stage prototype, so a planet mod's world
+   * previews exactly like Vulcanus — the only thing missing is its name, which the mode
+   * name can't supply. Asking the loaded mod set is the only answer that stays correct.
+   *
+   * Costs a container boot, so it's cached against the mod set that produced it: adding,
+   * removing or re-versioning a mod invalidates it, re-rendering a preview does not.
+   */
+  async listPlanets(id: string): Promise<string[]> {
+    const row = this.get(id);
+    const key = this.modSetKey(row);
+    const hit = this.planetCache.get(id);
+    if (hit && hit.key === key) return hit.planets;
+
+    serverFiles.ensureDirs(id);
+    await this.applyGameModeMods(row);
+    serverFiles.writePlanetScenario(id);
+    const { logs } = await this.docker.runOneShot(
+      row,
+      serverFiles.hostDir(id),
+      [
+        '--start-server-load-scenario',
+        'ftm-planets',
+        '--server-settings',
+        '/factorio/.import/server-settings.json',
+        '--mod-directory',
+        '/factorio/mods',
+      ],
+      180_000,
+    );
+    const json = extractMarker(logs);
+    if (!json) throw new DockerError(`planet listing failed: ${logs.slice(-400)}`);
+    const planets = (JSON.parse(json) as string[]).filter((p) => typeof p === 'string');
+    if (planets.length === 0) throw new DockerError('planet listing produced no planets');
+    this.planetCache.set(id, { key, planets });
+    return planets;
+  }
+
+  /** Identity of a server's mod set — what a planet listing is only valid for. */
+  private modSetKey(row: ServerRow): string {
+    const enabled = new Set(
+      serverFiles.readModList(row.id).filter((m) => m.enabled).map((m) => m.name),
+    );
+    const mods = this.mods
+      .installedMods(row.id)
+      .filter((m) => enabled.has(m.name))
+      .map((m) => `${m.name}@${m.version}`)
+      .sort();
+    return [row.game_mode, row.factorio_tag ?? '', ...mods].join('|');
+  }
+
+  /**
+   * Installed, enabled mods that shape the world at runtime instead of through
+   * prototypes — the ones a preview structurally cannot show (see mapGenScan).
+   *
+   * Filesystem-only: reads the zips already on disk, boots nothing. Bundled mods
+   * (base, space-age, …) live in the image rather than the mods dir, so they are
+   * never scanned; nothing in them rewrites the map after generation anyway.
+   */
+  runtimeMapGenMods(id: string): RuntimeMapGenMod[] {
+    this.get(id);
+    const dir = serverFiles.modsDir(id);
+    if (!fs.existsSync(dir)) return [];
+    const enabled = new Set(
+      serverFiles.readModList(id).filter((m) => m.enabled).map((m) => m.name),
+    );
+    const out: RuntimeMapGenMod[] = [];
+    for (const file of fs.readdirSync(dir)) {
+      if (!file.endsWith('.zip')) continue;
+      try {
+        const data = fs.readFileSync(path.join(dir, file));
+        const info = readModZipInfo(data);
+        if (!info || !enabled.has(info.name)) continue;
+        const apis = scanModZip(data);
+        if (apis.length > 0) {
+          out.push({ name: info.name, version: info.version, effects: effectsFor(apis) });
+        }
+      } catch {
+        /* not a readable mod zip — treated as absent, exactly like installedMods */
+      }
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**

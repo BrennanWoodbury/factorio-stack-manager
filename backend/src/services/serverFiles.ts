@@ -376,6 +376,37 @@ export class ServerFilesService {
     return this.writeScenarioServerSettings(serverId);
   }
 
+  /**
+   * Write a scenario that lists every planet the server's loaded mods define. Space Age
+   * made planets a data-stage prototype, so a planet mod's world is previewable exactly
+   * like Vulcanus — but only if we know its name, which no hardcoded list can supply.
+   * Run with `--mod-directory /factorio/mods` so the server's downloaded mods load.
+   *
+   * `prototypes.planet` is the 2.0 spelling; `game.planets` is read as a fallback so an
+   * image whose API predates it still answers instead of failing the whole listing.
+   */
+  writePlanetScenario(serverId: string): string {
+    const dir = path.join(this.localDir(serverId), 'scenarios', 'ftm-planets');
+    fs.mkdirSync(dir, { recursive: true });
+    const lua =
+      'script.on_init(function()\n' +
+      '  local names = {}\n' +
+      '  local ok = pcall(function()\n' +
+      '    for name in pairs(prototypes.planet) do names[#names+1] = name end\n' +
+      '  end)\n' +
+      '  if not ok or #names == 0 then\n' +
+      '    pcall(function()\n' +
+      '      for name in pairs(game.planets) do names[#names+1] = name end\n' +
+      '    end)\n' +
+      '  end\n' +
+      '  table.sort(names)\n' +
+      '  log("FTM_BEGIN"..helpers.table_to_json(names).."FTM_END")\n' +
+      '  error("FTM_STOP")\n' +
+      'end)\n';
+    fs.writeFileSync(path.join(dir, 'control.lua'), lua);
+    return this.writeScenarioServerSettings(serverId);
+  }
+
   /** Write the map-gen settings to encode; returns the in-container path. */
   writeEncodeSettings(serverId: string, mapGen: Record<string, unknown>): string {
     const dir = this.importScratchDir(serverId);

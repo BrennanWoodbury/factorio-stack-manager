@@ -528,6 +528,24 @@ export function serversRouter(ctx: AppContext): Router {
     }),
   );
 
+  // Planets the server's loaded mods define — the previewable set, including modded
+  // ones. Boots a scenario one-shot on a cold mod set, so it is not fetched per render.
+  r.get(
+    '/:id/mapgen/planets',
+    asyncHandler(async (req, res) => {
+      res.json({ planets: await manager.listPlanets(req.params.id) });
+    }),
+  );
+
+  // Enabled mods that rewrite the world at runtime, which no preview can show.
+  // Filesystem-only: reads the mod zips already on disk, boots nothing.
+  r.get(
+    '/:id/mapgen/runtime-mods',
+    asyncHandler(async (req, res) => {
+      res.json({ mods: manager.runtimeMapGenMods(req.params.id) });
+    }),
+  );
+
   // Encode the given (or saved) settings into a shareable exchange string (on-demand).
   r.post(
     '/:id/mapgen/export',
