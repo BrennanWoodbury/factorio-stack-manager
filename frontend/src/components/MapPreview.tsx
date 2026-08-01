@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { MapGenSettings } from '../types';
 import { toastError, toastSuccess } from '../ui';
-import { getPath, isModdedMode, previewPlanetsForMode, setPath } from './MapGenEditor';
+import { getPath, isModdedMode, planetLabel, previewPlanetsForMode, setPath } from './MapGenEditor';
 import { ExperimentalNote } from './ExperimentalNote';
 
 /**
@@ -12,6 +12,13 @@ import { ExperimentalNote } from './ExperimentalNote';
  */
 export function randomSeed(): number {
   return Math.floor(Math.random() * (2 ** 32 - 2)) + 2;
+}
+
+/** A mod that shapes the world at runtime, so the rendered map isn't the played one. */
+interface RuntimeMod {
+  name: string;
+  version: string;
+  effects: string[];
 }
 
 /**
@@ -35,12 +42,32 @@ export function MapPreview({
   onChange: (v: MapGenSettings) => void;
   mode?: string;
 }) {
-  const planets = previewPlanetsForMode(mode);
+  const [discovered, setDiscovered] = useState<{ key: string; label: string }[] | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [runtimeMods, setRuntimeMods] = useState<RuntimeMod[]>([]);
   const [planet, setPlanet] = useState('nauvis');
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const urlRef = useRef<string | null>(null);
+
+  // What the mods actually define beats what the mode name implies.
+  const planets = discovered ?? previewPlanetsForMode(mode);
+
+  // Which enabled mods rewrite the world after generation — a plain directory read on
+  // the backend, so unlike the planet listing it costs nothing and can just load.
+  useEffect(() => {
+    let live = true;
+    api
+      .runtimeMapGenMods(serverId)
+      .then((r) => live && setRuntimeMods(r.mods))
+      .catch(() => {
+        /* advisory only — a preview that renders is still worth showing */
+      });
+    return () => {
+      live = false;
+    };
+  }, [serverId]);
 
   const seedRaw = getPath(mapGen, ['seed']);
   const seed = typeof seedRaw === 'number' ? String(seedRaw) : '';
@@ -71,6 +98,24 @@ export function MapPreview({
       toastError((err as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * Ask the loaded mod set which planets exist. Deliberately on a button rather than on
+   * mount: it boots a Factorio one-shot, and opening the Map gen tab shouldn't start a
+   * container. The backend caches the answer against the mod set, so repeats are cheap.
+   */
+  const findPlanets = async () => {
+    setFinding(true);
+    try {
+      const { planets: found } = await api.mapGenPlanets(serverId);
+      setDiscovered(found.map((key) => ({ key, label: planetLabel(key) })));
+      toastSuccess(`Found ${found.length} planet${found.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      toastError((err as Error).message);
+    } finally {
+      setFinding(false);
     }
   };
 
@@ -111,7 +156,7 @@ export function MapPreview({
         </button>
       </div>
 
-      {planets.length > 1 && (
+      {(planets.length > 1 || isModdedMode(mode)) && (
         <div className="row" style={{ gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           {planets.map((p) => (
             <button
@@ -123,6 +168,17 @@ export function MapPreview({
               {p.label}
             </button>
           ))}
+          {isModdedMode(mode) && !discovered && (
+            <button
+              type="button"
+              className="ghost small"
+              disabled={finding || busy}
+              title="Boots Factorio once with this server's mods to list the planets they define"
+              onClick={() => void findPlanets()}
+            >
+              {finding ? 'Checking mods…' : '+ Find planets from mods'}
+            </button>
+          )}
         </div>
       )}
       <div className="row" style={{ alignItems: 'center', gap: 10 }}>
@@ -135,6 +191,15 @@ export function MapPreview({
       {isModdedMode(mode) && (
         <ExperimentalNote style={{ marginTop: 8 }}>
           Previews render with this server's mods loaded — some mod sets won't render.
+        </ExperimentalNote>
+      )}
+
+      {runtimeMods.length > 0 && (
+        <ExperimentalNote style={{ marginTop: 8 }}>
+          {runtimeMods.length} enabled mod{runtimeMods.length === 1 ? '' : 's'} change the map
+          after it generates, which a preview can't show:{' '}
+          {runtimeMods.map((m) => `${m.name} (${m.effects.join(', ')})`).join('; ')}. The real
+          world will differ from this image.
         </ExperimentalNote>
       )}
 

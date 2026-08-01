@@ -171,6 +171,13 @@ export const api = {
       'POST',
       `/servers/${id}/mapgen/baseline`,
     ),
+  mapGenPlanets: (id: string) =>
+    req<{ planets: string[] }>('GET', `/servers/${id}/mapgen/planets`),
+  runtimeMapGenMods: (id: string) =>
+    req<{ mods: { name: string; version: string; effects: string[] }[] }>(
+      'GET',
+      `/servers/${id}/mapgen/runtime-mods`,
+    ),
   previewMap: async (
     id: string,
     body: { mapGen?: Record<string, unknown>; planet?: string; seed?: number; size?: number },

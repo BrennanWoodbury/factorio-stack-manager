@@ -176,6 +176,15 @@ export function previewPlanetsForMode(mode: string): { key: string; label: strin
   return planets.map((p) => ({ key: p.key, label: p.label }));
 }
 
+/**
+ * Display name for a planet key: the known Space Age label, else the key prettified.
+ * Modded planets arrive as bare prototype names, so this is what makes `maraxsis`
+ * presentable without needing an entry in PLANETS.
+ */
+export function planetLabel(key: string): string {
+  return PLANETS.find((p) => p.key === key)?.label ?? prettify(key);
+}
+
 /** Turn an autoplace-control name into a readable label (e.g. tungsten_ore → Tungsten ore). */
 function prettify(key: string): string {
   const s = key.replace(/[-_]/g, ' ').trim();

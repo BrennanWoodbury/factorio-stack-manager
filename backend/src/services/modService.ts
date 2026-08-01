@@ -21,7 +21,7 @@ const MOD_PORTAL_BASE = 'https://mods.factorio.com';
  * `<name>_<version>/info.json`, so the shallowest info.json is the mod's own —
  * a mod that bundles another mod's zip must not be misread as that mod.
  */
-function readModZipInfo(data: Buffer): InstalledMod | undefined {
+export function readModZipInfo(data: Buffer): InstalledMod | undefined {
   const zip = new AdmZip(data);
   const infoEntry = zip
     .getEntries()
