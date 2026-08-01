@@ -160,6 +160,41 @@ describe('WizardMods', () => {
     expect(apiMocks.applyModpack).not.toHaveBeenCalled();
   });
 
+  test('applying a pack shows a busy indicator until the download finishes', async () => {
+    // A portal download can run for minutes. Swapping the button label was the only
+    // feedback, so the step read as a frozen page and invited a second click.
+    let finish!: (v: unknown) => void;
+    apiMocks.applyModpack.mockReturnValue(new Promise((res) => { finish = res; }));
+    render(<WizardMods draftId="draft1" />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'pack1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply & download' }));
+
+    expect((await screen.findAllByRole('status')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Downloading mods…').length).toBeGreaterThan(0);
+
+    await act(async () => {
+      finish({ serverId: 'draft1', downloaded: [], errors: [] });
+    });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
+  test('save & download shows a busy indicator until the download finishes', async () => {
+    let finish!: (v: unknown) => void;
+    apiMocks.putMods.mockReturnValue(new Promise((res) => { finish = res; }));
+    render(<WizardMods draftId="draft1" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Save & download' }));
+
+    expect((await screen.findAllByRole('status')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Downloading mods…').length).toBeGreaterThan(0);
+
+    await act(async () => {
+      finish({ mods: [{ name: 'base', enabled: true }], downloaded: [], errors: [] });
+    });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+
   test('the picker stays out of the way when there are no modpacks', async () => {
     apiMocks.listModpacks.mockResolvedValue({ modpacks: [] });
     render(<WizardMods draftId="draft1" />);
