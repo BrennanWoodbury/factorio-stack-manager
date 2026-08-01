@@ -492,13 +492,24 @@ export function CreateServerForm({
                   </div>
                   {mapGen ? (
                     <>
-                      {draftId && <MapPreview serverId={draftId} mapGen={mapGen} mode={gameMode} />}
+                      {draftId && (
+                        <MapPreview
+                          serverId={draftId}
+                          mapGen={mapGen}
+                          onChange={(v) => {
+                            setMapGen(v);
+                            setMapGenEdited(true);
+                          }}
+                          mode={gameMode}
+                        />
+                      )}
                       <MapGenEditor
                         value={mapGen}
                         onChange={(v) => {
                           setMapGen(v);
                           setMapGenEdited(true);
                         }}
+                        showSeed={false}
                         mode={gameMode}
                       />
                     </>
@@ -569,13 +580,24 @@ export function CreateServerForm({
                     </div>
                     <GameModeSelect value={gameMode} onChange={setGameMode} modeIssues={imageInfo?.modeIssues} />
                     <div style={{ marginTop: 12 }}>
-                      {draftId && <MapPreview serverId={draftId} mapGen={mapGen} mode={gameMode} />}
+                      {draftId && (
+                        <MapPreview
+                          serverId={draftId}
+                          mapGen={mapGen}
+                          onChange={(v) => {
+                            setMapGen(v);
+                            setMapGenEdited(true);
+                          }}
+                          mode={gameMode}
+                        />
+                      )}
                       <MapGenEditor
                         value={mapGen}
                         onChange={(v) => {
                           setMapGen(v);
                           setMapGenEdited(true);
                         }}
+                        showSeed={false}
                         mode={gameMode}
                       />
                     </div>

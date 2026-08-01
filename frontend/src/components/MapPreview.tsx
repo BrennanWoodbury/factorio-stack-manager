@@ -1,23 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { MapGenSettings } from '../types';
-import { toastError } from '../ui';
-import { isModdedMode, previewPlanetsForMode } from './MapGenEditor';
+import { toastError, toastSuccess } from '../ui';
+import { getPath, isModdedMode, previewPlanetsForMode, setPath } from './MapGenEditor';
 import { ExperimentalNote } from './ExperimentalNote';
 
 /**
  * Renders a map preview PNG for the given (unsaved) settings via a backend one-shot.
  * For Space Age, each planet (Nauvis, Vulcanus, Fulgora, …) can be previewed; the world
- * seed is held across planets so they show the same world. Click the image to expand;
- * "Reroll" previews a fresh random seed.
+ * seed is held in the settings so every planet shows the same world. Click the image to
+ * expand.
+ *
+ * The seed input box lives here so the preview and the seed stay in lockstep: whatever
+ * seed a render uses is written back into the box (via `onChange`), and whatever the box
+ * holds is what the next render uses.
  */
 export function MapPreview({
   serverId,
   mapGen,
+  onChange,
   mode = 'vanilla',
 }: {
   serverId: string;
   mapGen: MapGenSettings;
+  onChange: (v: MapGenSettings) => void;
   mode?: string;
 }) {
   const planets = previewPlanetsForMode(mode);
@@ -26,7 +32,9 @@ export function MapPreview({
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const urlRef = useRef<string | null>(null);
-  const seedRef = useRef<number | undefined>(undefined);
+
+  const seedRaw = getPath(mapGen, ['seed']);
+  const seed = typeof seedRaw === 'number' ? String(seedRaw) : '';
 
   // Revoke the previous object URL whenever it changes / on unmount.
   useEffect(() => {
@@ -36,11 +44,19 @@ export function MapPreview({
     };
   }, [url]);
 
-  const generate = async (which: string, seed?: number) => {
+  const setSeed = (value: number | null) => onChange(setPath(mapGen, ['seed'], value));
+
+  const generate = async (which: string, opts?: { reroll?: boolean }) => {
     setBusy(true);
-    if (seed !== undefined) seedRef.current = seed;
+    // Reroll always mints a fresh seed; otherwise reuse the box value, and only pick a
+    // random one when the box is empty. Either way we render with an explicit seed and
+    // write it back, so the box always shows the seed the preview actually used.
+    const current = typeof seedRaw === 'number' ? seedRaw : undefined;
+    const effective =
+      opts?.reroll || current === undefined ? Math.floor(Math.random() * 2 ** 31) : current;
+    if (effective !== current) setSeed(effective);
     try {
-      const blob = await api.previewMap(serverId, { mapGen, planet: which, seed: seedRef.current, size: 1024 });
+      const blob = await api.previewMap(serverId, { mapGen, planet: which, seed: effective, size: 1024 });
       setUrl(URL.createObjectURL(blob));
       setPlanet(which);
     } catch (err) {
@@ -50,10 +66,43 @@ export function MapPreview({
     }
   };
 
+  const copySeed = async () => {
+    try {
+      await navigator.clipboard.writeText(seed);
+      toastSuccess('Copied seed to clipboard');
+    } catch (err) {
+      toastError((err as Error).message);
+    }
+  };
+
   const activeLabel = planets.find((p) => p.key === planet)?.label ?? 'Nauvis';
 
   return (
     <div style={{ marginBottom: 12 }}>
+      <label className="small">Map seed (blank = random)</label>
+      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+        <input
+          type="number"
+          value={seed}
+          placeholder="random"
+          onChange={(e) => {
+            const val = e.target.value.trim();
+            setSeed(val === '' ? null : Number(val));
+          }}
+        />
+        <button type="button" className="small" disabled={!seed} onClick={() => void copySeed()}>
+          Copy seed
+        </button>
+        <button
+          type="button"
+          className="ghost small"
+          disabled={busy}
+          onClick={() => void generate(planet, { reroll: true })}
+        >
+          🎲 Reroll seed
+        </button>
+      </div>
+
       {planets.length > 1 && (
         <div className="row" style={{ gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           {planets.map((p) => (
@@ -72,15 +121,6 @@ export function MapPreview({
         <button disabled={busy} onClick={() => void generate(planet)}>
           {busy ? 'Rendering…' : url ? 'Refresh preview' : 'Preview map'}
         </button>
-        {url && (
-          <button
-            className="ghost small"
-            disabled={busy}
-            onClick={() => void generate(planet, Math.floor(Math.random() * 2 ** 31))}
-          >
-            🎲 Reroll seed
-          </button>
-        )}
         <span className="small muted">{activeLabel} · renders your current (unsaved) settings</span>
       </div>
 
