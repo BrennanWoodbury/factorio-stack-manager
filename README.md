@@ -401,10 +401,12 @@ cd backend  && npm run typecheck && npm test   # node:test
 cd frontend && npm run typecheck && npm test && npm run build   # vitest + jsdom
 ```
 
-[`scripts/run-tests.sh`](scripts/run-tests.sh) runs `npm test` in both `backend/` and
-`frontend/` in one step (skips typecheck and the frontend build):
+[`scripts/typecheck.sh`](scripts/typecheck.sh) and [`scripts/run-tests.sh`](scripts/run-tests.sh)
+run `npm run typecheck` / `npm test` in both `backend/` and `frontend/` in one step (neither runs
+the frontend build):
 
 ```bash
+./scripts/typecheck.sh
 ./scripts/run-tests.sh
 ```
 
