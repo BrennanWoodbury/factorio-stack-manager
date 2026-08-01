@@ -13,6 +13,7 @@ import { authRouter } from './routes/auth.js';
 import { serversRouter } from './routes/servers.js';
 import { modsRouter } from './routes/mods.js';
 import { modpacksRouter } from './routes/modpacks.js';
+import { modJobsRouter } from './routes/modJobs.js';
 import { mapGenTemplatesRouter } from './routes/mapGenTemplates.js';
 import { globalRouter } from './routes/global.js';
 import { systemRouter } from './routes/system.js';
@@ -144,6 +145,7 @@ async function main() {
   app.use('/api/servers', serversRouter(ctx));
   app.use('/api/mods', modsRouter(ctx));
   app.use('/api/modpacks', modpacksRouter(ctx));
+  app.use('/api/mod-jobs', modJobsRouter(ctx));
   app.use('/api/mapgen-templates', mapGenTemplatesRouter(ctx));
   app.use('/api/global', globalRouter(ctx));
   app.use('/api/system', systemRouter(ctx));

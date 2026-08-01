@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ModpacksRepo, type ModpackRow } from '../db/modpacksRepo.js';
 import { ServersRepo } from '../db/serversRepo.js';
-import { ModService } from './modService.js';
+import { ModService, type ModProgress } from './modService.js';
 import type { ModEntry } from './serverFiles.js';
 import { DuplicateModpackError, NotFoundError, ValidationError } from '../lib/errors.js';
 
@@ -178,7 +178,7 @@ export class ModpackService {
     };
   }
 
-  async apply(id: string, serverId: string): Promise<ApplyResult> {
+  async apply(id: string, serverId: string, onProgress?: ModProgress): Promise<ApplyResult> {
     const pack = this.repo.getById(id);
     if (!pack) throw new NotFoundError('Modpack');
     const server = this.servers.getById(serverId);
@@ -189,17 +189,34 @@ export class ModpackService {
       enabled: m.enabled === 1,
       version: m.version ?? undefined,
     }));
-    const result = await this.mods.applyModList(server, entries);
+    const result = await this.mods.applyModList(server, entries, onProgress);
     this.servers.setAppliedModpack(serverId, id);
     return { serverId, downloaded: result.downloaded, errors: result.errors };
   }
 
-  /** Re-apply a pack to every server currently marked as using it (explicit). */
-  async applyToAllUsing(id: string): Promise<ApplyResult[]> {
+  /**
+   * Re-apply a pack to every server currently marked as using it (explicit).
+   *
+   * Progress is reported across the whole run rather than per server — the caller
+   * is showing one bar for one button press, so each server's downloads continue
+   * the same count instead of restarting it.
+   */
+  async applyToAllUsing(id: string, onProgress?: ModProgress): Promise<ApplyResult[]> {
     if (!this.repo.getById(id)) throw new NotFoundError('Modpack');
+    const targets = this.servers.listByModpack(id);
+    const perServer = this.repo.countMods(id);
     const out: ApplyResult[] = [];
-    for (const s of this.servers.listByModpack(id)) {
-      out.push(await this.apply(id, s.id));
+    for (const [i, s] of targets.entries()) {
+      const offset = i * perServer;
+      out.push(
+        await this.apply(id, s.id, (p) =>
+          onProgress?.({
+            current: p.current,
+            completed: offset + p.completed,
+            total: perServer * targets.length,
+          }),
+        ),
+      );
     }
     return out;
   }

@@ -12,6 +12,7 @@ const apiMocks = vi.hoisted(() => ({
   factorioImageInfo: vi.fn(),
   getMods: vi.fn(),
   putMods: vi.fn(),
+  getModJob: vi.fn(),
   listModpacks: vi.fn(),
   planModpack: vi.fn(),
   applyModpack: vi.fn(),
@@ -194,10 +195,24 @@ describe('CreateServerForm: mods not applied on create', () => {
     apiMocks.searchMods.mockResolvedValue({
       results: [{ name: 'flib', title: 'Flib', owner: 'raiguard', summary: '', downloadsCount: 1000 }],
     });
+    // Saving returns immediately with a job for the download; the wizard waits on it.
     apiMocks.putMods.mockResolvedValue({
       mods: [{ name: 'flib', enabled: true }],
-      downloaded: [{ name: 'flib', version: '1.0.0' }],
-      errors: [],
+      job: {
+        id: 'job1',
+        kind: 'save',
+        key: 'server:d1',
+        serverId: 'd1',
+        state: 'done',
+        total: 1,
+        completed: 1,
+        current: null,
+        downloaded: [{ name: 'flib', version: '1.0.0' }],
+        errors: [],
+        error: null,
+        startedAt: '2026-01-01T00:00:00.000Z',
+        finishedAt: '2026-01-01T00:00:02.000Z',
+      },
     });
     const { onCreated } = renderWizard();
 

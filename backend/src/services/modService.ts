@@ -17,6 +17,14 @@ import { gameSeries, installedFromInfo, type InstalledMod } from './modCompat.js
 const MOD_PORTAL_BASE = 'https://mods.factorio.com';
 
 /**
+ * Reports which mod a multi-mod download is on, so a background job can show
+ * progress instead of the UI just waiting.
+ */
+export interface ModProgress {
+  (p: { current: string | null; completed: number; total: number }): void;
+}
+
+/**
  * A mod zip's manifest, or undefined when it isn't one. Mod zips contain
  * `<name>_<version>/info.json`, so the shallowest info.json is the mod's own —
  * a mod that bundles another mod's zip must not be misread as that mod.
@@ -516,12 +524,33 @@ export class ModService {
   async applyModList(
     server: ServerRow,
     entries: ModEntry[],
+    onProgress?: ModProgress,
   ): Promise<{ downloaded: { name: string; version: string }[]; errors: { name: string; error: string }[] }> {
-    serverFiles.writeModList(server.id, entries);
+    this.setModList(server.id, entries);
+    return this.downloadList(server, entries, onProgress);
+  }
+
+  /** Write mod-list.json without touching the zips. */
+  setModList(serverId: string, entries: ModEntry[]): void {
+    serverFiles.writeModList(serverId, entries);
+  }
+
+  /**
+   * Download the zip for every enabled non-base entry, reporting progress as it
+   * goes. Split out from `applyModList` so a caller can write the list inside the
+   * request (fast, and what the UI wants back immediately) and run the downloads
+   * as a background job.
+   */
+  async downloadList(
+    server: ServerRow,
+    entries: ModEntry[],
+    onProgress?: ModProgress,
+  ): Promise<{ downloaded: { name: string; version: string }[]; errors: { name: string; error: string }[] }> {
+    const wanted = entries.filter((e) => e.enabled && !BUNDLED_MODS.has(e.name));
     const downloaded: { name: string; version: string }[] = [];
     const errors: { name: string; error: string }[] = [];
-    for (const entry of entries) {
-      if (!entry.enabled || BUNDLED_MODS.has(entry.name)) continue;
+    for (const [i, entry] of wanted.entries()) {
+      onProgress?.({ current: entry.name, completed: i, total: wanted.length });
       try {
         const version = await this.downloadMod(server, entry.name, entry.version);
         downloaded.push({ name: entry.name, version });
@@ -529,6 +558,7 @@ export class ModService {
         errors.push({ name: entry.name, error: (err as Error).message });
       }
     }
+    onProgress?.({ current: null, completed: wanted.length, total: wanted.length });
     return { downloaded, errors };
   }
 
@@ -636,11 +666,15 @@ export class ModService {
   /** Re-download the latest release of every enabled non-base mod. */
   async updateAll(
     server: ServerRow,
+    onProgress?: ModProgress,
   ): Promise<{ updated: { name: string; version: string }[]; errors: { name: string; error: string }[] }> {
     const updated: { name: string; version: string }[] = [];
     const errors: { name: string; error: string }[] = [];
-    for (const entry of serverFiles.readModList(server.id)) {
-      if (!entry.enabled || BUNDLED_MODS.has(entry.name)) continue;
+    const wanted = serverFiles
+      .readModList(server.id)
+      .filter((e) => e.enabled && !BUNDLED_MODS.has(e.name));
+    for (const [i, entry] of wanted.entries()) {
+      onProgress?.({ current: entry.name, completed: i, total: wanted.length });
       try {
         // Force latest: ignore any pin.
         const version = await this.downloadMod(server, entry.name);
@@ -649,6 +683,7 @@ export class ModService {
         errors.push({ name: entry.name, error: (err as Error).message });
       }
     }
+    onProgress?.({ current: null, completed: wanted.length, total: wanted.length });
     return { updated, errors };
   }
 

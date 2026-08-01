@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { ModpackDetail as Detail, ModpackMod } from '../types';
 import { ModSearchBox } from './ModSearchBox';
 import { run, toastError, toastSuccess } from '../ui';
+import { useModJob } from '../useModJob';
 
 /** Edit a shared modpack: rename, edit its mod list, re-apply to servers, export. */
 export function ModpackDetail({ id, onBack }: { id: string; onBack: () => void }) {
@@ -11,6 +12,8 @@ export function ModpackDetail({ id, onBack }: { id: string; onBack: () => void }
   const [description, setDescription] = useState('');
   const [mods, setMods] = useState<ModpackMod[]>([]);
   const [saving, setSaving] = useState(false);
+  // Re-applying downloads into every server using the pack — a job, not a request.
+  const reapply = useModJob();
 
   const load = useCallback(async () => {
     try {
@@ -51,11 +54,13 @@ export function ModpackDetail({ id, onBack }: { id: string; onBack: () => void }
 
   const reapplyAll = async () => {
     if (detail.usedBy.length === 0) return;
+    const servers = detail.usedBy.length;
     try {
-      const r = await api.applyModpackToAll(id);
-      const errs = r.results.flatMap((x) => x.errors);
-      if (errs.length) toastError(`Re-applied with some errors (${errs.length})`);
-      else toastSuccess(`Re-applied to ${r.results.length} server(s)`);
+      const { job } = await api.applyModpackToAll(id);
+      const done = await reapply.track(job);
+      if (done.state === 'error') toastError(done.error ?? 'Re-applying failed');
+      else if (done.errors.length) toastError(`Re-applied with some errors (${done.errors.length})`);
+      else toastSuccess(`Re-applied to ${servers} server(s)`);
     } catch (err) {
       toastError((err as Error).message);
     }
@@ -87,8 +92,14 @@ export function ModpackDetail({ id, onBack }: { id: string; onBack: () => void }
         {detail.usedBy.length > 0 && (
           <div className="small muted" style={{ marginTop: 14 }}>
             Used by {detail.usedBy.map((s) => s.name).join(', ')}.{' '}
-            <button className="ghost small" onClick={() => void reapplyAll()}>
-              Re-apply to all ({detail.usedBy.length})
+            <button
+              className="ghost small"
+              disabled={reapply.busy}
+              onClick={() => void reapplyAll()}
+            >
+              {reapply.busy
+                ? (reapply.label ?? 'Re-applying…')
+                : `Re-apply to all (${detail.usedBy.length})`}
             </button>
           </div>
         )}

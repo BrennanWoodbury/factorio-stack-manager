@@ -11,6 +11,17 @@ path in the release notes and are never shipped in a minor or patch.
 
 ## [Unreleased]
 
+### Changed
+
+- Mod downloads (**Save & download**, **Apply & download**, **Update all**, and
+  re-applying a pack to every server using it) now run as a background job instead of
+  inside the request that starts them. A large modpack no longer leaves the whole UI
+  unresponsive until the last zip lands: the button reports which mod is downloading
+  and how far along it is, the rest of the page keeps working, and a reload rejoins a
+  download already in flight. The endpoints that start one answer `202` with a job to
+  poll at `GET /api/mod-jobs/:id`, so `downloaded`/`errors` arrive on the job rather
+  than in the response body.
+
 ### Release process
 
 - Reviewed runtime changes now produce patch releases on merge, additive migrations

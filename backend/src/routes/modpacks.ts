@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { ValidationError } from '../lib/errors.js';
+import { modpackKey, serverKey } from '../services/modJobService.js';
 
 const modSchema = z.object({
   name: z.string().min(1),
@@ -101,22 +102,43 @@ export function modpacksRouter(ctx: AppContext): Router {
     }),
   );
 
+  // Applying downloads every mod in the pack, which for a big pack is minutes of
+  // work — so it runs as a job and the response carries something to poll rather
+  // than the finished result. Validation still happens here, synchronously, so a
+  // bad pack or server id is a 404 on the request instead of a failed job.
   r.post(
     '/:id/apply',
     asyncHandler(async (req, res) => {
       const body = parse(z.object({ serverId: z.string().min(1) }), req.body);
-      const result = await modpacks.apply(req.params.id, body.serverId);
-      await ctx.manager.maybeAutoRestart(body.serverId, true);
-      res.json(result);
+      const plan = modpacks.plan(req.params.id, body.serverId);
+      const job = ctx.modJobs.start(
+        { kind: 'apply', key: serverKey(body.serverId), serverId: body.serverId, total: plan.mods.length },
+        async (progress) => {
+          const result = await modpacks.apply(req.params.id, body.serverId, progress);
+          await ctx.manager.maybeAutoRestart(body.serverId, true);
+          return result;
+        },
+      );
+      res.status(202).json({ job });
     }),
   );
 
   r.post(
     '/:id/apply-all',
     asyncHandler(async (req, res) => {
-      const results = await modpacks.applyToAllUsing(req.params.id);
-      for (const rslt of results) await ctx.manager.maybeAutoRestart(rslt.serverId, true);
-      res.json({ results });
+      modpacks.get(req.params.id); // 404 now rather than inside the job
+      const job = ctx.modJobs.start(
+        { kind: 'apply-all', key: modpackKey(req.params.id) },
+        async (progress) => {
+          const results = await modpacks.applyToAllUsing(req.params.id, progress);
+          for (const rslt of results) await ctx.manager.maybeAutoRestart(rslt.serverId, true);
+          return {
+            downloaded: results.flatMap((r2) => r2.downloaded),
+            errors: results.flatMap((r2) => r2.errors),
+          };
+        },
+      );
+      res.status(202).json({ job });
     }),
   );
 
