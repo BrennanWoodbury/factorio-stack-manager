@@ -45,6 +45,18 @@ test('listed settings match what fetching the template returns', () => {
   assert.deepEqual(listed?.settings, svc.get(created.id).settings);
 });
 
+test('a seed never survives onto a template — it belongs to a server', () => {
+  const svc = service();
+  // Saving a server's settings as a template would otherwise pin that server's seed.
+  const created = svc.create({ name: 'From server', settings: { water: 1, seed: 123456 } });
+  assert.deepEqual(created.settings, { water: 1 });
+  assert.equal('seed' in svc.get(created.id).settings, false);
+
+  // And it can't be reintroduced by a later edit.
+  const updated = svc.update(created.id, { settings: { water: 2, seed: 999 } });
+  assert.deepEqual(updated.settings, { water: 2 });
+});
+
 test('a template with unreadable settings lists as empty rather than breaking the list', () => {
   // parseSettings already tolerates corrupt JSON; the listing must not be the one
   // place that throws, or a single bad row would empty the picker.
