@@ -351,6 +351,9 @@ downloads that mod's latest release only.
 
 ## Local development
 
+Host-mode development (both options below that run Node directly) expects the Node version
+pinned in [`.nvmrc`](.nvmrc) — run `nvm use` / `fnm use` from the repo root first.
+
 ### Option 1 — Dev stack in containers (hot reload)
 
 The easiest path — nothing to install on the host:
@@ -367,16 +370,21 @@ works over the Docker network — same wiring as production. Open **http://local
 
 ### Option 2 — On the host (no containers)
 
+[`scripts/init.sh`](scripts/init.sh) runs `npm install` in both `backend/` and `frontend/` in one
+step (requires Node to already be on `PATH` — see `.nvmrc` above):
+
+```bash
+./scripts/init.sh
+```
+
 ```bash
 # Backend (API on :8080). RCON_MODE=loopback so it reaches the published RCON ports.
 # NB: the backend reads env vars directly — it does NOT load .env; pass them inline.
 cd backend
-npm install
 ADMIN_PASSWORD=dev RCON_MODE=loopback DATA_DIR=$PWD/data npm run dev
 
 # Frontend (Vite dev server on :5173, proxies /api → :8080)
 cd frontend
-npm install
 npm run dev
 ```
 
@@ -391,6 +399,13 @@ Typecheck, test and build:
 ```bash
 cd backend  && npm run typecheck && npm test   # node:test
 cd frontend && npm run typecheck && npm test && npm run build   # vitest + jsdom
+```
+
+[`scripts/run-tests.sh`](scripts/run-tests.sh) runs `npm test` in both `backend/` and
+`frontend/` in one step (skips typecheck and the frontend build):
+
+```bash
+./scripts/run-tests.sh
 ```
 
 Frontend tests run components for real under jsdom — which has no `EventSource`, so the log
