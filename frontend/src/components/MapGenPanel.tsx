@@ -183,7 +183,7 @@ export function MapGenPanel({ server }: { server: Server }) {
         )}
       </div>
       <MapPreview serverId={server.id} mapGen={mapGen} onChange={setMapGen} mode={mode} />
-      <MapGenEditor value={mapGen} onChange={setMapGen} showSeed={false} mode={mode} />
+      <MapGenEditor value={mapGen} onChange={setMapGen} mode={mode} />
 
       {/* Advanced raw-JSON escape hatch */}
       <Collapsible

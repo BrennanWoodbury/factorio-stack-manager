@@ -509,7 +509,6 @@ export function CreateServerForm({
                           setMapGen(v);
                           setMapGenEdited(true);
                         }}
-                        showSeed={false}
                         mode={gameMode}
                       />
                     </>
@@ -597,7 +596,6 @@ export function CreateServerForm({
                           setMapGen(v);
                           setMapGenEdited(true);
                         }}
-                        showSeed={false}
                         mode={gameMode}
                       />
                     </div>

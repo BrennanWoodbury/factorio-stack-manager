@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { MapGenSettings, MapGenTemplate } from '../types';
-import { run, toastError, toastSuccess } from '../ui';
+import { run, toastError } from '../ui';
 import { ExperimentalNote } from './ExperimentalNote';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -217,19 +217,18 @@ function canonical(v: unknown): string {
   return `{${entries.map(([k, val]) => `${JSON.stringify(k)}:${canonical(val)}`).join(',')}}`;
 }
 
+// The seed is deliberately absent here: it belongs to an individual server, not to a
+// reusable template or the slider set, so it's owned by <MapPreview> (which renders the
+// seed box in the server contexts) and never stored on a template.
 export function MapGenEditor({
   value,
   onChange,
   showTemplates = true,
-  showSeed = true,
   mode = 'space_age',
 }: {
   value: MapGenSettings;
   onChange: (v: MapGenSettings) => void;
   showTemplates?: boolean;
-  // The seed box lives here for standalone editing (e.g. templates), but where a
-  // MapPreview is shown it owns the seed instead — pass false to hide it here.
-  showSeed?: boolean;
   mode?: string;
 }) {
   const [templates, setTemplates] = useState<MapGenTemplate[]>([]);
@@ -301,17 +300,6 @@ export function MapGenEditor({
     onChange(setPath(value, ['cliff_settings', 'cliff_elevation_interval'], freq > 0 ? 40 / freq : 40));
 
   const peaceful = getPath(value, ['peaceful_mode']) === true;
-  const seedRaw = getPath(value, ['seed']);
-  const seed = typeof seedRaw === 'number' ? String(seedRaw) : '';
-
-  const copySeed = async (s: string) => {
-    try {
-      await navigator.clipboard.writeText(s);
-      toastSuccess('Copied seed to clipboard');
-    } catch (err) {
-      toastError((err as Error).message);
-    }
-  };
 
   const applyTemplate = async (id: string) => {
     if (!id) {
@@ -451,30 +439,6 @@ export function MapGenEditor({
           <input type="checkbox" style={{ width: 'auto' }} checked={peaceful} onChange={(e) => sg(['peaceful_mode'], e.target.checked)} />
           Peaceful mode (enemies don't attack unless provoked)
         </label>
-        {showSeed && (
-          <>
-            <label style={{ marginTop: 14 }}>Map seed (blank = random)</label>
-            <div className="row" style={{ gap: 8 }}>
-              <input
-                type="number"
-                value={seed}
-                placeholder="random"
-                onChange={(e) => {
-                  const val = e.target.value.trim();
-                  onChange(setPath(value, ['seed'], val === '' ? null : Number(val)));
-                }}
-              />
-              <button
-                type="button"
-                className="small"
-                disabled={!seed}
-                onClick={() => void copySeed(seed)}
-              >
-                Copy seed
-              </button>
-            </div>
-          </>
-        )}
       </Group>
     </div>
   );

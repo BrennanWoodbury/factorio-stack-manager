@@ -27,6 +27,19 @@ function isPlainObject(v: unknown): v is Settings {
 }
 
 /**
+ * A map seed belongs to an individual server, never to a reusable template — a
+ * template that pinned a seed would make every server built from it generate the
+ * identical map. Strip it whenever settings are stored, so it can't leak in from a
+ * "save this server's settings as a template" snapshot, an import, or a manual edit.
+ */
+function withoutSeed(settings: Settings): Settings {
+  if (!('seed' in settings)) return settings;
+  const rest = { ...settings };
+  delete rest.seed;
+  return rest;
+}
+
+/**
  * The shared map-generation template registry: named, reusable map-gen-settings
  * presets (ore/water/terrain sliders, etc.) you build once and pick when creating a
  * server. A template holds only a settings object — no server reference. Selecting
@@ -107,7 +120,7 @@ export class MapGenTemplateService {
       id,
       name: finalName,
       description: input.description?.trim() ?? '',
-      settings_json: JSON.stringify(input.settings),
+      settings_json: JSON.stringify(withoutSeed(input.settings)),
     });
     return this.get(id);
   }
@@ -129,7 +142,7 @@ export class MapGenTemplateService {
     if (fields.description !== undefined) patch.description = fields.description.trim();
     if (fields.settings !== undefined) {
       if (!isPlainObject(fields.settings)) throw new ValidationError('Template settings must be an object');
-      patch.settings_json = JSON.stringify(fields.settings);
+      patch.settings_json = JSON.stringify(withoutSeed(fields.settings));
     }
     this.repo.update(id, patch);
     return this.get(id);
