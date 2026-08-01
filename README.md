@@ -3,7 +3,7 @@
 Self-hosted web app to run **many Factorio dedicated servers on one home host** behind a
 consumer NAT router. Each server is reachable by players at its own subdomain
 (`factory1.mydomain.com`) with **no port number to type** and **no reverse proxy** — the
-routing is done entirely by DNS **SRV records**.
+routing is done entirely by DNS **SRV records** — no per-server port to configure or remember.
 
 - Backend: Node.js + TypeScript (Express, `dockerode`, `node:sqlite`, `rcon-client`)
 - Frontend: React + TypeScript (Vite)
