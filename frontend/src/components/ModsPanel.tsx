@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { ModEntry, ModProblem, Server } from '../types';
 import { run, toastError, toastSuccess } from '../ui';
+import { modJobServerKey, useModJob } from '../useModJob';
 import { ModSearchBox } from './ModSearchBox';
 import { ApplyModpack } from './ApplyModpack';
 
@@ -10,6 +11,10 @@ export function ModsPanel({ server }: { server: Server }) {
   const [problems, setProblems] = useState<ModProblem[]>([]);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Downloads run server-side as a job; this follows it instead of blocking the UI.
+  const download = useModJob();
+  // "Saving" covers the request; the job covers the download that outlives it.
+  const busy = saving || download.busy;
 
   const load = useCallback(async () => {
     try {
@@ -25,6 +30,15 @@ export function ModsPanel({ server }: { server: Server }) {
     void load();
   }, [load]);
 
+  // A download started before a reload (or in another tab) is still running on the
+  // server — rejoin it so the button isn't offering to start a second one.
+  useEffect(() => {
+    void download.adopt(modJobServerKey(server.id)).then((done) => {
+      if (done) void load();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- adopt once per server
+  }, [server.id]);
+
   const addByName = (name: string) => {
     if (!name || mods.some((m) => m.name === name)) return;
     setMods((m) => [...m, { name, enabled: true }]);
@@ -33,18 +47,24 @@ export function ModsPanel({ server }: { server: Server }) {
   const save = async () => {
     setSaving(true);
     try {
+      // The list is already saved when this resolves; only the zips are still coming.
       const r = await api.putMods(server.id, mods);
       setMods(r.mods);
       setProblems(r.problems ?? []);
-      if (r.errors.length > 0) {
-        toastError(`Some mods failed: ${r.errors.map((e) => `${e.name} (${e.error})`).join('; ')}`);
+      const done = await download.track(r.job);
+      if (done.state === 'error') {
+        toastError(done.error ?? 'Downloading mods failed');
+      } else if (done.errors.length > 0) {
+        toastError(`Some mods failed: ${done.errors.map((e) => `${e.name} (${e.error})`).join('; ')}`);
       } else {
         toastSuccess(
-          r.downloaded.length > 0
-            ? `Saved. Downloaded: ${r.downloaded.map((d) => `${d.name}@${d.version}`).join(', ')}`
+          done.downloaded.length > 0
+            ? `Saved. Downloaded: ${done.downloaded.map((d) => `${d.name}@${d.version}`).join(', ')}`
             : 'Mod list saved',
         );
       }
+      // Re-check now the zips are on disk: "not installed" clears only once they are.
+      await load();
     } catch (err) {
       toastError((err as Error).message);
     } finally {
@@ -74,19 +94,25 @@ export function ModsPanel({ server }: { server: Server }) {
             Upload .zip
           </button>
           <button
+            disabled={busy}
             onClick={async () => {
               const r = await api.updateMods(server.id).catch((err) => {
                 toastError((err as Error).message);
                 return null;
               });
-              if (r) {
-                setMods(r.mods);
+              if (!r) return;
+              setMods(r.mods);
+              const done = await download.track(r.job);
+              if (done.state === 'error') {
+                toastError(done.error ?? 'Updating mods failed');
+              } else {
                 toastSuccess(
-                  r.updated.length
-                    ? `Updated: ${r.updated.map((u) => `${u.name}@${u.version}`).join(', ')}`
+                  done.downloaded.length
+                    ? `Updated: ${done.downloaded.map((u) => `${u.name}@${u.version}`).join(', ')}`
                     : 'Nothing to update',
                 );
               }
+              await load();
             }}
             title="Re-download the latest release of every enabled mod"
           >
@@ -111,8 +137,8 @@ export function ModsPanel({ server }: { server: Server }) {
           >
             Delete all
           </button>
-          <button className="primary" disabled={saving} onClick={() => void run(save)}>
-            {saving ? 'Applying…' : 'Save & download'}
+          <button className="primary" disabled={busy} onClick={() => void run(save)}>
+            {busy ? (download.label ?? 'Applying…') : 'Save & download'}
           </button>
         </div>
       </div>

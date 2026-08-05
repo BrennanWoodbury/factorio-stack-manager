@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { api } from '../api';
 import type { ModEntry } from '../types';
 import { toastError, toastSuccess } from '../ui';
+import { useModJob } from '../useModJob';
 import { ModSearchBox } from './ModSearchBox';
 import { ApplyModpack } from './ApplyModpack';
 
@@ -32,6 +33,9 @@ export const WizardMods = forwardRef<
 >(function WizardMods({ draftId, onSaved, onDirtyChange }, ref) {
   const [mods, setMods] = useState<ModEntry[]>([]);
   const [saving, setSaving] = useState(false);
+  // The zips download as a background job, so the wizard stays interactive; `save`
+  // still resolves only once they're on disk, since Test & Create depends on that.
+  const download = useModJob();
   // Last mod list actually saved & downloaded, so we can tell whether `mods` has drifted
   // from it (added/removed/toggled without hitting "Save & download").
   const savedRef = useRef<ModEntry[]>([]);
@@ -68,12 +72,15 @@ export const WizardMods = forwardRef<
       setMods(r.mods);
       savedRef.current = r.mods;
       onSaved?.(r.mods);
-      if (r.errors.length > 0) {
-        toastError(`Some mods failed: ${r.errors.map((e) => `${e.name} (${e.error})`).join('; ')}`);
+      const done = await download.track(r.job);
+      if (done.state === 'error') {
+        toastError(done.error ?? 'Downloading mods failed');
+      } else if (done.errors.length > 0) {
+        toastError(`Some mods failed: ${done.errors.map((e) => `${e.name} (${e.error})`).join('; ')}`);
       } else {
         toastSuccess(
-          r.downloaded.length > 0
-            ? `Saved. Downloaded: ${r.downloaded.map((d) => `${d.name}@${d.version}`).join(', ')}`
+          done.downloaded.length > 0
+            ? `Saved. Downloaded: ${done.downloaded.map((d) => `${d.name}@${d.version}`).join(', ')}`
             : 'Mods saved',
         );
       }
@@ -93,8 +100,12 @@ export const WizardMods = forwardRef<
         <span className="small muted">
           Enabled mods download via the global Factorio.com account (Settings).
         </span>
-        <button className="primary small" disabled={saving} onClick={() => void save()}>
-          {saving ? 'Downloading…' : 'Save & download'}
+        <button
+          className="primary small"
+          disabled={saving || download.busy}
+          onClick={() => void save()}
+        >
+          {saving || download.busy ? (download.label ?? 'Downloading…') : 'Save & download'}
         </button>
       </div>
 

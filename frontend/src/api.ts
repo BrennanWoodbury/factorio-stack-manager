@@ -1,5 +1,4 @@
 import type {
-  ApplyResult,
   BackupInfo,
   CatalogEntry,
   DependencyResolution,
@@ -15,6 +14,7 @@ import type {
   MapGenTemplate,
   MapGenTemplateDetail,
   ModEntry,
+  ModJob,
   ModProblem,
   Modpack,
   ModpackDetail,
@@ -224,13 +224,11 @@ export const api = {
 
   // mods
   getMods: (id: string) => req<{ mods: ModEntry[] }>('GET', `/servers/${id}/mods`),
+  // The list is saved by the time this resolves; the zips download under `job`.
   putMods: (id: string, mods: ModEntry[]) =>
-    req<{
-      mods: ModEntry[];
-      downloaded: { name: string; version: string }[];
-      errors: { name: string; error: string }[];
-      problems: ModProblem[];
-    }>('PUT', `/servers/${id}/mods`, { mods }),
+    req<{ mods: ModEntry[]; job: ModJob; problems: ModProblem[] }>('PUT', `/servers/${id}/mods`, {
+      mods,
+    }),
 
   getModProblems: (id: string) =>
     req<{ problems: ModProblem[] }>('GET', `/servers/${id}/mods/problems`),
@@ -261,18 +259,13 @@ export const api = {
     ),
 
   applyModpack: (id: string, serverId: string) =>
-    req<ApplyResult>('POST', `/modpacks/${id}/apply`, { serverId }),
-  applyModpackToAll: (id: string) =>
-    req<{ results: ApplyResult[] }>('POST', `/modpacks/${id}/apply-all`),
+    req<{ job: ModJob }>('POST', `/modpacks/${id}/apply`, { serverId }),
+  applyModpackToAll: (id: string) => req<{ job: ModJob }>('POST', `/modpacks/${id}/apply-all`),
   exportModpackUrl: (id: string) => `/api/modpacks/${id}/export`,
 
   deleteAllMods: (id: string) => req<{ mods: ModEntry[] }>('POST', `/servers/${id}/mods/deleteAll`),
   updateMods: (id: string) =>
-    req<{
-      mods: ModEntry[];
-      updated: { name: string; version: string }[];
-      errors: { name: string; error: string }[];
-    }>('POST', `/servers/${id}/mods/update`),
+    req<{ mods: ModEntry[]; job: ModJob }>('POST', `/servers/${id}/mods/update`),
   uploadMod: async (id: string, file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -289,6 +282,12 @@ export const api = {
     return json as { name: string; version: string; mods: ModEntry[] };
   },
   exportModsUrl: (id: string) => `/api/servers/${id}/mods/export`,
+
+  // mod download jobs
+  getModJob: (jobId: string) => req<{ job: ModJob }>('GET', `/mod-jobs/${jobId}`),
+  /** Jobs still running (or just finished) for a server — used to rejoin after a reload. */
+  listModJobs: (key: string) =>
+    req<{ jobs: ModJob[] }>('GET', `/mod-jobs?key=${encodeURIComponent(key)}`),
 
   // whitelist
   getWhitelist: (id: string) =>

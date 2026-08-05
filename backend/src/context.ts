@@ -11,6 +11,7 @@ import { DnsService } from './services/dnsService.js';
 import { RconService } from './services/rconService.js';
 import { ServerManager } from './services/serverManager.js';
 import { ModService } from './services/modService.js';
+import { ModJobService } from './services/modJobService.js';
 import { ImageProfileService } from './services/imageProfile.js';
 import { DdnsJob } from './jobs/ddns.js';
 import { BackupJob } from './jobs/backup.js';
@@ -28,6 +29,7 @@ export interface AppContext {
   dns: DnsService;
   rcon: RconService;
   mods: ModService;
+  modJobs: ModJobService;
   modpacks: ModpackService;
   mapGenTemplates: MapGenTemplateService;
   manager: ServerManager;
@@ -48,6 +50,8 @@ export function buildContext(config: AppConfig): AppContext {
   // Shared so mod downloads and the lifecycle agree on what the image ships.
   const imageProfiles = new ImageProfileService(docker);
   const mods = new ModService(db, imageProfiles);
+  // Long mod downloads run here rather than inside the request that asked for them.
+  const modJobs = new ModJobService();
   const modpacksRepo = new ModpacksRepo(db);
   const modpacks = new ModpackService(modpacksRepo, repo, mods);
   const mapGenTemplates = new MapGenTemplateService(new MapGenTemplatesRepo(db), repo);
@@ -57,5 +61,5 @@ export function buildContext(config: AppConfig): AppContext {
   const draftPrune = new DraftPruneJob(manager);
   const updateCheck = new UpdateCheckJob(config);
   const telemetry = new TelemetryJob(config, db, repo);
-  return { config, db, repo, allocator, docker, dns, rcon, mods, modpacks, mapGenTemplates, manager, ddns, backups, draftPrune, updateCheck, telemetry };
+  return { config, db, repo, allocator, docker, dns, rcon, mods, modJobs, modpacks, mapGenTemplates, manager, ddns, backups, draftPrune, updateCheck, telemetry };
 }

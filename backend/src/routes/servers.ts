@@ -10,6 +10,7 @@ import { serverFiles } from '../services/serverFiles.js';
 import { getFactorioAccount, factorioAccountConfigured } from '../services/factorioAccount.js';
 import { getGlobalDefaults } from '../services/globalDefaults.js';
 import { getLogger } from '../lib/logger.js';
+import { serverKey } from '../services/modJobService.js';
 
 const createLog = getLogger('create');
 const finalizeLog = getLogger('finalize');
@@ -722,16 +723,31 @@ export function serversRouter(ctx: AppContext): Router {
     }),
   );
 
+  /**
+   * Save the list now, download in the background.
+   *
+   * The write is instant and is what the rest of the UI reads, so it stays in the
+   * request; the zips can be minutes of portal traffic, so they run as a job the
+   * client polls. `downloaded`/`errors` therefore arrive on the job, not here.
+   */
   r.put(
     '/:id/mods',
     asyncHandler(async (req, res) => {
       const row = manager.get(req.params.id);
       const body = parse(z.object({ mods: z.array(modEntrySchema) }), req.body);
-      const result = await mods.applyModList(row, body.mods);
-      await manager.maybeAutoRestart(row.id, true);
-      // Reported here rather than only at start: this is where the user is standing
-      // when they create the problem, and start() refuses on the same list.
-      res.json({ mods: mods.getModList(row.id), ...result, problems: await modProblems(row.id) });
+      mods.setModList(row.id, body.mods);
+      const job = ctx.modJobs.start(
+        { kind: 'save', key: serverKey(row.id), serverId: row.id },
+        async (progress) => {
+          const result = await mods.downloadList(row, body.mods, progress);
+          await manager.maybeAutoRestart(row.id, true);
+          return result;
+        },
+      );
+      // Problems are reported here rather than only at start: this is where the user
+      // is standing when they create one, and start() refuses on the same list. They
+      // are re-checked when the job finishes, once the zips are actually on disk.
+      res.status(202).json({ mods: mods.getModList(row.id), job, problems: await modProblems(row.id) });
     }),
   );
 
@@ -781,9 +797,16 @@ export function serversRouter(ctx: AppContext): Router {
     '/:id/mods/update',
     asyncHandler(async (req, res) => {
       const row = manager.get(req.params.id);
-      const result = await mods.updateAll(row);
-      await manager.maybeAutoRestart(row.id, true);
-      res.json({ mods: mods.getModList(row.id), ...result });
+      const job = ctx.modJobs.start(
+        { kind: 'update', key: serverKey(row.id), serverId: row.id },
+        async (progress) => {
+          const result = await mods.updateAll(row, progress);
+          await manager.maybeAutoRestart(row.id, true);
+          // The job reports downloads; an update *is* a download of the latest release.
+          return { downloaded: result.updated, errors: result.errors };
+        },
+      );
+      res.status(202).json({ mods: mods.getModList(row.id), job });
     }),
   );
 

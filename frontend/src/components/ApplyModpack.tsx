@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Modpack } from '../types';
 import { toastError, toastSuccess } from '../ui';
+import { useModJob } from '../useModJob';
 import { ConfirmDialog } from './ConfirmDialog';
 
 /**
@@ -23,6 +24,8 @@ export function ApplyModpack({
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmMissing, setConfirmMissing] = useState<string[] | null>(null);
+  // Applying downloads in the background; this follows it so the page stays usable.
+  const download = useModJob();
 
   useEffect(() => {
     void api
@@ -58,16 +61,19 @@ export function ApplyModpack({
   const apply = async () => {
     setBusy(true);
     try {
-      const r = await api.applyModpack(selected, serverId);
-      if (r.errors.length > 0) {
+      const { job } = await api.applyModpack(selected, serverId);
+      const done = await download.track(job);
+      if (done.state === 'error') {
+        toastError(done.error ?? 'Applying the modpack failed');
+      } else if (done.errors.length > 0) {
         // The reason, not just the count: "applied with errors" over a list of
         // names is what left a broken mod set with nothing to act on.
         toastError(
-          `Applied, but ${r.errors.length} mod(s) failed to download — ` +
-            r.errors.map((e) => `${e.name}: ${e.error}`).join('; '),
+          `Applied, but ${done.errors.length} mod(s) failed to download — ` +
+            done.errors.map((e) => `${e.name}: ${e.error}`).join('; '),
         );
       } else {
-        toastSuccess(`Applied modpack (${r.downloaded.length} mods downloaded)`);
+        toastSuccess(`Applied modpack (${done.downloaded.length} mods downloaded)`);
       }
       onApplied();
     } catch (err) {
@@ -101,12 +107,13 @@ export function ApplyModpack({
           ))}
         </select>
         <button className="primary" disabled={!selected || busy} onClick={() => void start()}>
-          {busy ? 'Applying…' : 'Apply & download'}
+          {busy ? (download.label ?? 'Applying…') : 'Apply & download'}
         </button>
       </div>
       <div className="small muted" style={{ marginTop: 6 }}>
         Applying replaces the mod list with the pack's, then downloads the mods. Takes effect on
-        next start.
+        next start.{' '}
+        {download.busy && 'The download runs in the background — the rest of the page keeps working.'}
       </div>
 
       {confirmMissing && (

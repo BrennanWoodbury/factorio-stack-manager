@@ -250,6 +250,28 @@ export interface ApplyResult {
   errors: { name: string; error: string }[];
 }
 
+/**
+ * A mod download running on the server. Downloads no longer happen inside the
+ * request that asks for them, so this is what the UI watches instead of waiting.
+ */
+export interface ModJob {
+  id: string;
+  kind: 'save' | 'apply' | 'apply-all' | 'update';
+  key: string;
+  serverId: string | null;
+  state: 'running' | 'done' | 'error';
+  total: number;
+  completed: number;
+  /** Mod currently downloading, if any. */
+  current: string | null;
+  downloaded: { name: string; version: string }[];
+  errors: { name: string; error: string }[];
+  /** Set when the job itself failed, as opposed to individual mods failing. */
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface DnsSettings {
   revision: number;
   baseDomain: string;

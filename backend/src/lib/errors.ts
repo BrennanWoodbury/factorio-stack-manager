@@ -44,6 +44,16 @@ export class DnsSettingsConflictError extends AppError {
   }
 }
 
+export class ModJobBusyError extends AppError {
+  constructor() {
+    super(
+      'A mod download is already running here — wait for it to finish before starting another',
+      409,
+      'MOD_JOB_BUSY',
+    );
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(what = 'Resource') {
     super(`${what} not found`, 404, 'NOT_FOUND');
