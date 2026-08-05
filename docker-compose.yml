@@ -7,8 +7,9 @@
 
 services:
   manager:
-    build: .
-    image: factorio-stack-manager:latest
+    # End-user installs pull the release image published by CI. Local source
+    # development uses docker-compose.dev.yml instead.
+    image: brennanwoodbury/factorio-stack-manager:latest
     container_name: factorio-stack-manager
     restart: unless-stopped
     # Give the manager time to gracefully stop the Factorio containers on shutdown
