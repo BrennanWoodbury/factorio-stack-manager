@@ -80,6 +80,15 @@ describe('previewPlanetsForMode', () => {
     expect(sa).toContain('vulcanus');
     expect(previewPlanetsForMode('space_age_no_quality').map((p) => p.key)).toEqual(sa);
   });
+
+  test('every modded mode offers the full planet list', () => {
+    // Previews load the server's mods, so a pack on any base may define these
+    // surfaces — the mode name alone can't rule them out.
+    const sa = previewPlanetsForMode('space_age').map((p) => p.key);
+    for (const mode of ['modded', 'modded_vanilla', 'modded_space_age']) {
+      expect(previewPlanetsForMode(mode).map((p) => p.key)).toEqual(sa);
+    }
+  });
 });
 
 describe('sameSettings', () => {
