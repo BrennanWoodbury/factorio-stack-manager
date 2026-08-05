@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { run } from '../ui';
+import { BusyOverlay } from './BusyOverlay';
 
 /**
  * Start / Stop / Restart controls for a server, shown depending on its running
@@ -32,7 +33,7 @@ export function LifecycleControls({
   const cls = small ? 'small' : '';
 
   return (
-    <div className={`lifecycle ${busy ? 'busy' : ''}`} onClick={(e) => e.stopPropagation()}>
+    <BusyOverlay busy={busy} className="lifecycle" onClick={(e) => e.stopPropagation()}>
       {running ? (
         <>
           <button
@@ -59,11 +60,6 @@ export function LifecycleControls({
           Start
         </button>
       )}
-      {busy && (
-        <div className="lifecycle-overlay">
-          <span className="spinner" />
-        </div>
-      )}
-    </div>
+    </BusyOverlay>
   );
 }

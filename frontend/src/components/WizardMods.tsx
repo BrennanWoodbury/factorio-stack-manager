@@ -2,8 +2,9 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { api } from '../api';
 import type { ModEntry } from '../types';
 import { toastError, toastSuccess } from '../ui';
-import { ModSearchBox } from './ModSearchBox';
 import { ApplyModpack } from './ApplyModpack';
+import { BusyOverlay } from './BusyOverlay';
+import { ModSearchBox } from './ModSearchBox';
 
 /** Imperative handle so the wizard can force a save (e.g. before finalizing a draft). */
 export interface WizardModsHandle {
@@ -88,7 +89,7 @@ export const WizardMods = forwardRef<
   useImperativeHandle(ref, () => ({ save }));
 
   return (
-    <div>
+    <BusyOverlay busy={saving} label="Downloading mods…">
       <div className="spread" style={{ marginBottom: 8 }}>
         <span className="small muted">
           Enabled mods download via the global Factorio.com account (Settings).
@@ -152,6 +153,6 @@ export const WizardMods = forwardRef<
       <div className="small muted" style={{ marginTop: 10 }}>
         Added mods need <strong>Save &amp; download</strong> before they're included in the test.
       </div>
-    </div>
+    </BusyOverlay>
   );
 });
