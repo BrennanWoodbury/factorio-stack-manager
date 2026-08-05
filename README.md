@@ -100,7 +100,8 @@ git clone https://github.com/BrennanWoodbury/factorio-stack-manager.git
 cd factorio-stack-manager
 cp .env.example .env
 # edit .env — at minimum set ADMIN_PASSWORD (that's the only required var)
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Open `http://<host>:8080` and log in with `ADMIN_PASSWORD`.
