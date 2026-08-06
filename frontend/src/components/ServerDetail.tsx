@@ -118,6 +118,7 @@ function Overview({ server, status }: { server: Server; status: ServerStatus | n
     ['Game port (UDP)', String(server.gamePort)],
     ['RCON port (loopback TCP)', String(server.rconPort)],
     ['Factorio image', server.factorioImage ?? '(default)'],
+    ['Container ID', server.containerId ?? 'not created'],
     ['Selected save', server.saveName],
     ['Generate new save on start', server.generateNewSave ? 'yes' : 'no'],
     ['Factorio.com account (global)', server.hasFactorioCredentials ? 'set' : 'not set'],
