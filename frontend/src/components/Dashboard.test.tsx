@@ -18,16 +18,16 @@ const server: Server = {
   gamePort: 34197, rconPort: 27015, saveName: 'world.zip', generateNewSave: false,
   gameMode: 'vanilla', hasFactorioCredentials: false,
   containerId: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-  status: 'stopped', createdAt: '', updatedAt: '', appliedModpackId: null, factorioTag: 'stable',
-  autoRestart: false, dnsEnabled: false, autoBackup: false, backupIntervalMinutes: 60,
-  backupKeep: 7, backupKeepManual: 7,
+  status: 'running', createdAt: '', updatedAt: '', appliedModpackId: null, factorioTag: 'stable',
+  factorioImage: 'factoriotools/factorio:stable', autoRestart: false, dnsEnabled: false,
+  autoBackup: false, backupIntervalMinutes: 60, backupKeep: 7, backupKeepManual: 7,
   overrides: { autoRestart: false, autoBackup: false, backupIntervalMinutes: false, backupKeep: false, backupKeepManual: false },
 };
 
 beforeEach(() => {
   apiMocks.listServers.mockResolvedValue({ servers: [server] });
   apiMocks.listDrafts.mockResolvedValue({ drafts: [] });
-  apiMocks.status.mockResolvedValue({ id: 'server-1', status: 'stopped', running: false });
+  apiMocks.status.mockResolvedValue({ id: 'server-1', status: 'running', running: true, factorioVersion: '2.0.99' });
   apiMocks.systemStatus.mockRejectedValue(new Error('not relevant to this test'));
 });
 
@@ -37,10 +37,11 @@ afterEach(() => {
 });
 
 describe('Dashboard', () => {
-  test('does not show container IDs outside an individual server overview', async () => {
+  test('shows the running game version without repeating overview-only details', async () => {
     render(<Dashboard onOpen={vi.fn()} />);
 
-    await screen.findByText('Nauvis');
+    expect(await screen.findByText('Game Version: 2.0.99')).toBeTruthy();
+    expect(screen.queryByText('Image: factoriotools/factorio:stable')).toBeNull();
     expect(screen.queryByText(server.containerId!)).toBeNull();
     expect(screen.queryByText('Container ID')).toBeNull();
   });

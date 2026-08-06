@@ -1556,6 +1556,7 @@ export class ServerManager {
     id: string;
     status: string;
     running: boolean;
+    factorioVersion?: string;
     startedAt?: string;
     restartCount?: number;
     players?: { count: number; names: string[] };
@@ -1571,6 +1572,7 @@ export class ServerManager {
       id,
       status,
       running: cs.running,
+      factorioVersion: cs.factorioVersion,
       startedAt: cs.startedAt,
       restartCount: cs.restartCount,
     } as Awaited<ReturnType<ServerManager['status']>>;

@@ -14,15 +14,15 @@ vi.mock('react-router-dom', () => ({ useSearchParams: () => [new URLSearchParams
 const server = (containerId: string | null): Server => ({
   id: 'server-1', name: 'Nauvis', subdomain: 'nauvis', description: '', maxPlayers: 0,
   gamePort: 34197, rconPort: 27015, saveName: 'world.zip', generateNewSave: false,
-  gameMode: 'vanilla', hasFactorioCredentials: false, containerId, status: 'stopped',
+  gameMode: 'vanilla', hasFactorioCredentials: false, containerId, status: 'running',
   createdAt: '2026-08-05T00:00:00Z', updatedAt: '2026-08-05T00:00:00Z', appliedModpackId: null,
-  factorioTag: 'stable', autoRestart: false, dnsEnabled: false, autoBackup: false,
-  backupIntervalMinutes: 60, backupKeep: 7, backupKeepManual: 7,
+  factorioTag: 'stable', factorioImage: 'factoriotools/factorio:stable', autoRestart: false,
+  dnsEnabled: false, autoBackup: false, backupIntervalMinutes: 60, backupKeep: 7, backupKeepManual: 7,
   overrides: { autoRestart: false, autoBackup: false, backupIntervalMinutes: false, backupKeep: false, backupKeepManual: false },
 });
 
 beforeEach(() => {
-  apiMocks.status.mockResolvedValue({ id: 'server-1', status: 'stopped', running: false });
+  apiMocks.status.mockResolvedValue({ id: 'server-1', status: 'running', running: true, factorioVersion: '2.0.99' });
 });
 
 afterEach(() => {
@@ -47,5 +47,16 @@ describe('ServerDetail overview', () => {
     render(<ServerDetail id="server-1" onBack={vi.fn()} />);
 
     expect(await screen.findByText('not created')).toBeTruthy();
+  });
+
+  test('keeps the configured image and running game version together in the overview', async () => {
+    apiMocks.getServer.mockResolvedValue({ server: server('container-id') });
+
+    render(<ServerDetail id="server-1" onBack={vi.fn()} />);
+
+    expect(await screen.findByText('Factorio image')).toBeTruthy();
+    expect(screen.getByText('factoriotools/factorio:stable')).toBeTruthy();
+    expect(screen.getByText('Game Version')).toBeTruthy();
+    expect(screen.getByText('2.0.99')).toBeTruthy();
   });
 });

@@ -39,6 +39,8 @@ export const LEGACY_SERVER_ID_LABEL = 'factorio-manager.server-id';
 export interface ContainerStatus {
   exists: boolean;
   running: boolean;
+  /** Factorio version declared by the exact image backing a running container. */
+  factorioVersion?: string;
   startedAt?: string;
   state?: string;
   /** Exit code of the last run — meaningful only once it has exited at least once. */
@@ -91,6 +93,8 @@ export function conflictingHostPorts(err: unknown): number[] {
  */
 export class DockerService {
   private readonly docker: Docker;
+  /** Image IDs are immutable, so their Factorio-version labels are safe to retain. */
+  private readonly factorioVersions = new Map<string, Promise<string | undefined>>();
 
   constructor(private readonly config: AppConfig) {
     this.docker = new Docker({ socketPath: config.dockerSocket });
@@ -683,9 +687,12 @@ export class DockerService {
     try {
       const c = this.docker.getContainer(this.containerName(serverId));
       const info = await c.inspect();
+      const running = info.State.Running === true;
+      const factorioVersion = running && info.Image ? await this.factorioVersion(info.Image) : undefined;
       return {
         exists: true,
-        running: info.State.Running === true,
+        running,
+        factorioVersion,
         startedAt: info.State.StartedAt,
         state: info.State.Status,
         exitCode: info.State.ExitCode,
@@ -696,6 +703,20 @@ export class DockerService {
       if (e.statusCode === 404) return { exists: false, running: false };
       throw new DockerError(`status failed: ${(err as Error).message}`);
     }
+  }
+
+  /** Read and cache the version label from the immutable image used by a container. */
+  private factorioVersion(imageId: string): Promise<string | undefined> {
+    let version = this.factorioVersions.get(imageId);
+    if (!version) {
+      version = this.docker
+        .getImage(imageId)
+        .inspect()
+        .then((info) => info.Config?.Labels?.['factorio.version'])
+        .catch(() => undefined);
+      this.factorioVersions.set(imageId, version);
+    }
+    return version;
   }
 
   /** Tail recent container logs (for surfacing start failures like a bad mod). */

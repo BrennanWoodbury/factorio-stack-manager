@@ -100,6 +100,9 @@ export function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
                 {' · '}
                 {s.subdomain}
               </div>
+              <div className="small muted">
+                Game Version: {st?.factorioVersion ?? 'unavailable'}
+              </div>
             </div>
             <div className="row" style={{ alignItems: 'center' }}>
               {running && st?.players && (

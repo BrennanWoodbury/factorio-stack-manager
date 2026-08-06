@@ -83,3 +83,45 @@ test('newly created containers are stamped with only the new label generation', 
   assert.equal(LEGACY_MANAGED_LABEL, 'factorio-manager.managed');
   assert.equal(LEGACY_SERVER_ID_LABEL, 'factorio-manager.server-id');
 });
+
+test('status reports the running container image Factorio version and caches the image lookup', async () => {
+  const service = new DockerService(fakeConfig());
+  let imageInspects = 0;
+  withFakeDocker(service, {
+    getContainer: () => ({
+      inspect: async () => ({
+        Image: 'sha256:running-image',
+        State: { Running: true, StartedAt: '2026-08-05T00:00:00Z', Status: 'running', ExitCode: 0 },
+        RestartCount: 0,
+      }),
+    }),
+    getImage: () => ({
+      inspect: async () => {
+        imageInspects += 1;
+        return { Config: { Labels: { 'factorio.version': '2.0.99' } } };
+      },
+    }),
+  });
+
+  assert.equal((await service.status('server-1')).factorioVersion, '2.0.99');
+  assert.equal((await service.status('server-1')).factorioVersion, '2.0.99');
+  assert.equal(imageInspects, 1);
+});
+
+test('status does not claim a running Factorio version for a stopped container', async () => {
+  const service = new DockerService(fakeConfig());
+  let imageInspects = 0;
+  withFakeDocker(service, {
+    getContainer: () => ({
+      inspect: async () => ({
+        Image: 'sha256:stopped-image',
+        State: { Running: false, StartedAt: '', Status: 'exited', ExitCode: 0 },
+        RestartCount: 0,
+      }),
+    }),
+    getImage: () => ({ inspect: async () => (imageInspects += 1) }),
+  });
+
+  assert.equal((await service.status('server-1')).factorioVersion, undefined);
+  assert.equal(imageInspects, 0);
+});

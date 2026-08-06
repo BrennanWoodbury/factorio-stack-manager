@@ -135,6 +135,8 @@ export interface ServerStatus {
   /** 'running' | 'stopped' | 'crashed' — 'crashed' means it keeps exiting and restarting. */
   status: string;
   running: boolean;
+  /** Version from the image that backs the running container, when Docker exposes it. */
+  factorioVersion?: string;
   startedAt?: string;
   /** Times Docker has restarted the container; non-zero means it has died. */
   restartCount?: number;
