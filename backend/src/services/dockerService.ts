@@ -49,6 +49,10 @@ export interface ContainerStatus {
   restartCount?: number;
 }
 
+function isSpaceAgeGameMode(gameMode: string | null | undefined): boolean {
+  return ['space_age', 'space_age_no_quality', 'modded_space_age'].includes(gameMode ?? '');
+}
+
 /**
  * The stored status for a container state.
  *
@@ -353,6 +357,13 @@ export class DockerService {
       SAVE_NAME: server.save_name,
       GENERATE_NEW_SAVE: server.generate_new_save === 1 ? 'true' : 'false',
       LOAD_LATEST_SAVE: 'false',
+      DLC_SPACE_AGE: isSpaceAgeGameMode(server.game_mode) ? 'true' : 'false',
+      // Space Age — without Quality is a special case: the image's DLC toggle is a
+      // single on/off switch for the whole DLC bundle, so it cannot selectively keep
+      // just the space-age/elevated-rails mods enabled while excluding quality.
+      // The code that later tweaks mod enablement for that mode lives in imageProfile.ts
+      // and serverManager.ts, but there is no post-start toggle here; TODO if a future
+      // workflow wants to disable just quality while keeping the rest of the bundle on.
       // Bind Factorio inside the container to the server's own allocated game port
       // so it matches the host/external/SRV port 1:1 (no translation). RCON stays on
       // the fixed internal port (loopback/Docker-network only, never forwarded).

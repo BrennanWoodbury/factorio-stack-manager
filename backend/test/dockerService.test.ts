@@ -125,3 +125,32 @@ test('status does not claim a running Factorio version for a stopped container',
   assert.equal((await service.status('server-1')).factorioVersion, undefined);
   assert.equal(imageInspects, 0);
 });
+
+test('envFor sets DLC_SPACE_AGE for Space Age variants only', () => {
+  const service = new DockerService(fakeConfig());
+
+  const envFor = (mode: string) =>
+    (service as unknown as {
+      envFor: (server: {
+        game_mode: string;
+        save_name: string;
+        generate_new_save: number;
+        game_port: number;
+        rcon_password: string;
+      }) => string[];
+    }).envFor({
+      game_mode: mode,
+      save_name: 'save.zip',
+      generate_new_save: 0,
+      game_port: 34197,
+      rcon_password: 'pw',
+    });
+
+  for (const mode of ['space_age', 'space_age_no_quality', 'modded_space_age']) {
+    assert.ok(envFor(mode).includes('DLC_SPACE_AGE=true'));
+  }
+
+  for (const mode of ['vanilla', 'modded', 'modded_vanilla']) {
+    assert.ok(envFor(mode).includes('DLC_SPACE_AGE=false'));
+  }
+});
