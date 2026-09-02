@@ -126,7 +126,7 @@ test('status does not claim a running Factorio version for a stopped container',
   assert.equal(imageInspects, 0);
 });
 
-test('envFor sets DLC_SPACE_AGE for Space Age variants only', () => {
+test('envFor sets DLC_SPACE_AGE to match each game mode', () => {
   const service = new DockerService(fakeConfig());
 
   const envFor = (mode: string) =>
@@ -146,11 +146,20 @@ test('envFor sets DLC_SPACE_AGE for Space Age variants only', () => {
       rcon_password: 'pw',
     });
 
-  for (const mode of ['space_age', 'space_age_no_quality', 'modded_space_age']) {
-    assert.ok(envFor(mode).includes('DLC_SPACE_AGE=true'));
+  for (const mode of ['space_age', 'modded_space_age']) {
+    assert.ok(envFor(mode).includes('DLC_SPACE_AGE=true'), mode);
   }
 
+  // The image entrypoint force-enables the whole DLC bundle unless told otherwise,
+  // so non-Space-Age modes must say so explicitly (a modded_vanilla pack like
+  // nullius is incompatible with space-age and fails to load otherwise).
   for (const mode of ['vanilla', 'modded', 'modded_vanilla']) {
-    assert.ok(envFor(mode).includes('DLC_SPACE_AGE=false'));
+    assert.ok(envFor(mode).includes('DLC_SPACE_AGE=false'), mode);
   }
+
+  // "without Quality" uses the entrypoint's mod-list form rather than true, which
+  // would re-enable quality on every start and defeat the mode.
+  assert.ok(
+    envFor('space_age_no_quality').includes('DLC_SPACE_AGE=space-age elevated-rails'),
+  );
 });
