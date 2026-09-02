@@ -50,6 +50,35 @@ export interface ContainerStatus {
 }
 
 /**
+ * The value for the image's `DLC_SPACE_AGE` entrypoint variable (docker-dlc.sh).
+ *
+ * The image ships `ENV DLC_SPACE_AGE=true`, and its entrypoint rewrites
+ * mod-list.json on *every* container start — after we've written our own. So
+ * leaving it unset silently force-enables space-age/quality/elevated-rails on
+ * servers that must not have them (a modded_vanilla pack like nullius then dies
+ * with "Incompatible with space-age" on each restart).
+ *
+ * The variable accepts a space-separated mod list as well as true/false, which
+ * is what makes "Space Age - without Quality" expressible: name the mods to keep
+ * and the entrypoint disables the rest of the bundle. The list mirrors the
+ * dependency closure `modEnablementFor` computes for each mode, so the
+ * entrypoint reinforces our mod-list.json instead of fighting it.
+ */
+function dlcSpaceAgeFor(gameMode: string | null | undefined): string {
+  switch (gameMode) {
+    case 'space_age':
+    case 'modded_space_age':
+      return 'true';
+    // space-age pulls in elevated-rails in every image profile, so the closure of
+    // ['space-age'] is exactly these two once quality is excluded.
+    case 'space_age_no_quality':
+      return 'space-age elevated-rails';
+    default:
+      return 'false';
+  }
+}
+
+/**
  * The stored status for a container state.
  *
  * `crashed` exists because Docker reports `restarting` only while it waits out the
@@ -353,6 +382,7 @@ export class DockerService {
       SAVE_NAME: server.save_name,
       GENERATE_NEW_SAVE: server.generate_new_save === 1 ? 'true' : 'false',
       LOAD_LATEST_SAVE: 'false',
+      DLC_SPACE_AGE: dlcSpaceAgeFor(server.game_mode),
       // Bind Factorio inside the container to the server's own allocated game port
       // so it matches the host/external/SRV port 1:1 (no translation). RCON stays on
       // the fixed internal port (loopback/Docker-network only, never forwarded).
