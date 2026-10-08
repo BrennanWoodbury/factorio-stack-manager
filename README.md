@@ -218,12 +218,13 @@ It applies the `unraid` label automatically so reports remain searchable in this
   created — so a configuration can be tested, fixed and tested again before you commit to it. A
   test doesn't need a name or subdomain yet, and editing anything that changes the world
   (map-gen settings, game mode) discards the tested map so the next run really re-generates it.
-- **Load from save:** upload a `.zip` and the manager reads the save's own header (`level-init.dat`)
-  directly — no container boot — to report the exact **Factorio version**, scenario and **full mod
+- **Load from save:** upload a `.zip` and the manager reads the save's own header (`level.dat0`, the
+  world as last saved — not the map-creation snapshot in `level-init.dat`, which goes stale as mods
+  change) directly — no container boot — to report the exact **Factorio version**, scenario and **full mod
   list with pinned versions**, shown as chips the moment the upload finishes. That header is then
   what decides the server's mod set, **on every path that creates it** — testing first is optional,
   not how the mods get installed. Bundled expansion mods are switched on (and off) to match it
-  exactly; mod-portal mods are downloaded **at the versions the world was built with**. If a
+  exactly; mod-portal mods are downloaded **at the versions the world was last saved with**. If a
   required mod can't be fetched, creation fails loudly — which matters because Factorio itself does
   *not* error on a save with missing mods, it silently drops them and hosts a gutted world. The
   draft also adopts its **game mode from the save** (see below), so an uploaded world is never given
