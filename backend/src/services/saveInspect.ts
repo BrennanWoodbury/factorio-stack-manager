@@ -37,9 +37,7 @@ export interface SaveHeader {
  * from there and inflate the raw deflate stream ourselves.
  * ------------------------------------------------------------------ */
 
-function readZipEntry(zipPath: string, match: (name: string) => boolean): Buffer | null {
-  const buf = fs.readFileSync(zipPath);
-
+function readZipEntry(buf: Buffer, match: (name: string) => boolean): Buffer | null {
   // End of central directory record — scan back from the end (comment may follow).
   let eocd = -1;
   const floor = Math.max(0, buf.length - 66_000);
@@ -137,7 +135,7 @@ function tryModList(b: Buffer, pos: number): SaveMod[] | null {
 }
 
 /**
- * Decode a save's `level-init.dat` header.
+ * Decode a save header — the start of `level.dat0` (once inflated) or `level-init.dat`.
  *
  * Layout (Factorio 2.0.x), little-endian throughout:
  *   u16 x4   version (main, major, minor, patch)
@@ -176,9 +174,29 @@ export function parseSaveHeader(dat: Buffer): SaveHeader {
   throw new Error('could not locate the mod list in the save header');
 }
 
-/** Read a save file's header off disk. */
+/**
+ * Read a save file's header off disk.
+ *
+ * Two entries carry the header. `level.dat0` is the first zlib chunk of the world as
+ * last saved, so it names the game version and mods the save is played with now.
+ * `level-init.dat` is the snapshot from when the map was created and Factorio never
+ * rewrites it: a mod added or removed since, or a game update, is wrong there. It is
+ * only the fallback for a save without a readable `level.dat0`.
+ */
 export function readSaveHeader(savePath: string): SaveHeader {
-  const dat = readZipEntry(savePath, (n) => n === 'level-init.dat' || n.endsWith('/level-init.dat'));
+  const zip = fs.readFileSync(savePath);
+  const entry = (file: string) => (n: string) => n === file || n.endsWith(`/${file}`);
+
+  const current = readZipEntry(zip, entry('level.dat0'));
+  if (current) {
+    try {
+      return parseSaveHeader(zlib.inflateSync(current));
+    } catch {
+      // Not a chunk we can decode — the map-creation header is the best left.
+    }
+  }
+
+  const dat = readZipEntry(zip, entry('level-init.dat'));
   if (!dat) throw new Error('not a Factorio save (no level-init.dat)');
   return parseSaveHeader(dat);
 }

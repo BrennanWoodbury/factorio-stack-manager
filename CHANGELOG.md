@@ -11,6 +11,13 @@ path in the release notes and are never shipped in a minor or patch.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Load from save** reads the header of the world as last saved (`level.dat0`)
+  instead of the map-creation snapshot (`level-init.dat`), so mods added or removed
+  after the map was created, and the current Factorio version, are no longer reported
+  wrong.
+
 ### Release process
 
 - Reviewed runtime changes now produce patch releases on merge, additive migrations

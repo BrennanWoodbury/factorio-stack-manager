@@ -1,7 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import zlib from 'node:zlib';
+import AdmZip from 'adm-zip';
 import {
   parseSaveHeader,
+  readSaveHeader,
   portalModsFor,
   bundledModsFor,
   gameModeForSave,
@@ -51,6 +57,15 @@ function buildHeader(
   // Trailing map data — the parser must not depend on the header ending here.
   parts.push(Buffer.alloc(64, 0xab));
   return Buffer.concat(parts);
+}
+
+/** Write a save zip to disk with each entry under the save's folder, as Factorio does. */
+function writeSave(entries: Record<string, Buffer>): string {
+  const zip = new AdmZip();
+  for (const [name, data] of Object.entries(entries)) zip.addFile(`my-world/${name}`, data);
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fsm-save-inspect-')), 'my-world.zip');
+  zip.writeZip(file);
+  return file;
 }
 
 test('reads game version, scenario and mods from a header', () => {
@@ -136,6 +151,58 @@ test('rejects a buffer that is not a save header', () => {
 
 test('rejects a truncated header', () => {
   assert.throws(() => parseSaveHeader(Buffer.alloc(4)), /truncated/);
+});
+
+test('reads the mods a save was last played with, not the ones its map was created with', () => {
+  // level-init.dat is the snapshot from map creation and Factorio never rewrites it,
+  // so a mod removed since then — or the game update since — would come back from it.
+  // The current header opens level.dat0, the world's first zlib chunk.
+  const file = writeSave({
+    'level-init.dat': buildHeader({
+      version: [2, 0, 72, 0],
+      mods: [
+        { name: 'base', version: '2.0.72' },
+        { name: 'removedmod', version: '1.0.0' },
+      ],
+    }),
+    'level.dat0': zlib.deflateSync(
+      buildHeader({
+        mods: [
+          { name: 'base', version: '2.0.77' },
+          { name: 'addedmod', version: '2.3.4' },
+        ],
+      }),
+    ),
+  });
+  const h = readSaveHeader(file);
+  assert.equal(h.gameVersion, '2.0.77');
+  assert.deepEqual(h.mods, [
+    { name: 'base', version: '2.0.77' },
+    { name: 'addedmod', version: '2.3.4' },
+  ]);
+});
+
+test('falls back to level-init.dat when level.dat0 is missing or unreadable', () => {
+  const init = buildHeader({
+    mods: [
+      { name: 'base', version: '2.0.77' },
+      { name: 'flib', version: '0.16.3' },
+    ],
+  });
+  for (const extra of [{}, { 'level.dat0': Buffer.from('not a zlib stream') }]) {
+    const h = readSaveHeader(writeSave({ 'level-init.dat': init, ...extra }));
+    assert.deepEqual(
+      h.mods.map((m) => m.name),
+      ['base', 'flib'],
+    );
+  }
+});
+
+test('rejects a zip that is not a Factorio save', () => {
+  assert.throws(
+    () => readSaveHeader(writeSave({ 'readme.txt': Buffer.from('hello') })),
+    /not a Factorio save/,
+  );
 });
 
 test('the game mode a save should run as names the base its mods sit on', () => {
